@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwriting Recognition</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 40px;
+        }
+        #previewContainer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .previewImage {
+            max-width: 150px;
+            margin: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        #predictionResult {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+    <script>
+        async function uploadImages(event) {
+            event.preventDefault();
+            let fileInput = document.getElementById("fileInput");
+            let files = fileInput.files;
+            
+            if (files.length === 0) {
+                alert("Please select at least one image.");
+                return;
+            }
+
+            let imagesBase64 = [];
+            let previewContainer = document.getElementById("previewContainer");
+            previewContainer.innerHTML = "";  // Clear previous previews
+
+            // Convert each selected file to Base64
+            for (let file of files) {
+                let reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onloadend = function () {
+                    imagesBase64.push(reader.result);
+
+                    // Display image preview
+                    let imgElement = document.createElement("img");
+                    imgElement.src = reader.result;
+                    imgElement.className = "previewImage";
+                    previewContainer.appendChild(imgElement);
+                };
+            }
+
+            // Wait for all images to be processed
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            try {
+                let response = await fetch("http://localhost:5001/upload", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        images: imagesBase64  // Send multiple images
+                    })
+                });
+
+                let result = await response.json();
+                document.getElementById("predictionResult").innerText = "Response: " + JSON.stringify(result);
+            } catch (error) {
+                document.getElementById("predictionResult").innerText = "Error: " + error.message;
+            }
+        }
+    </script>
+</head>
+<body>
+    <h2>Upload Handwritten Letters</h2>
+    <form onsubmit="uploadImages(event)">
+        <input type="file" id="fileInput" multiple accept="image/*" required>
+        <button type="submit">Submit</button>
+    </form>
+    <div id="previewContainer"></div>
+    <h3 id="predictionResult"></h3>
+</body>
+</html>
