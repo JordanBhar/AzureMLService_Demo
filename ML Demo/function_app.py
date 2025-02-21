@@ -11,3 +11,9 @@ app = func.FunctionApp()
 def ImageHub_ImageProduced_trigger(azeventhub: func.EventHubEvent):
     logging.info("✅ EventHub Triggered! Processing event...")
     logging.info("Received event: %s", azeventhub.get_body().decode('utf-8'))
+
+
+    #Note for Jordan
+    #Make sure to run npm install azureite in the terminal to install the azureite package so that the code can run locally
+    #Also make sure to have the azureite package installed in the requirements.txt file
+    
