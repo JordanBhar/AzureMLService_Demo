@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,21 +11,32 @@
             text-align: center;
             margin: 40px;
         }
+
         #previewContainer {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
             margin-top: 20px;
         }
+
         .previewImage {
             max-width: 150px;
             margin: 10px;
             border-radius: 8px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
-        #predictionResult {
-            margin-top: 20px;
-            font-weight: bold;
+
+        #predictionBox {
+            margin: 30px auto;
+            width: 60%;
+            height: 250px;
+            border: 2px solid #333;
+            background-color: #f0f0f0;
+            text-align: left;
+            padding: 15px;
+            overflow-y: scroll;
+            white-space: pre-wrap;
+            font-size: 18px;
         }
     </style>
     <script>
@@ -32,7 +44,7 @@
             event.preventDefault();
             let fileInput = document.getElementById("fileInput");
             let files = fileInput.files;
-            
+
             if (files.length === 0) {
                 alert("Please select at least one image.");
                 return;
@@ -42,7 +54,6 @@
             let previewContainer = document.getElementById("previewContainer");
             previewContainer.innerHTML = "";  // Clear previous previews
 
-            // Convert each selected file to Base64
             for (let file of files) {
                 let reader = new FileReader();
                 reader.readAsDataURL(file);
@@ -67,16 +78,32 @@
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        images: imagesBase64  // Send multiple images
+                        images: imagesBase64
                     })
                 });
 
                 let result = await response.json();
-                document.getElementById("predictionResult").innerText = "Response: " + JSON.stringify(result);
+                document.getElementById("predictionBox").innerText = "Waiting for prediction...";
             } catch (error) {
-                document.getElementById("predictionResult").innerText = "Error: " + error.message;
+                document.getElementById("predictionBox").innerText = "Error: " + error.message;
             }
         }
+
+        async function fetchPredictions() {
+            try {
+                let response = await fetch("http://localhost:5002/messages");
+                let result = await response.json();
+                if (result.messages) {
+                    let box = document.getElementById("predictionBox");
+                    box.innerHTML = result.messages.join("<br>");
+                    box.scrollTop = box.scrollHeight; // Auto-scroll to the bottom
+                }
+            } catch (error) {
+                console.error("Error fetching predictions:", error);
+            }
+        }
+
+        setInterval(fetchPredictions, 2000);  // Poll for predictions every 2 seconds
     </script>
 </head>
 <body>
@@ -86,6 +113,8 @@
         <button type="submit">Submit</button>
     </form>
     <div id="previewContainer"></div>
-    <h3 id="predictionResult"></h3>
+
+    <h3>Predictions:</h3>
+    <div id="predictionBox">Waiting for predictions...</div>
 </body>
 </html>
