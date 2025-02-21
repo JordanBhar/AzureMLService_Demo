@@ -1,54 +1,45 @@
+from flask import Flask, jsonify
+from flask_cors import CORS
 from azure.eventhub import EventHubConsumerClient
-import base64
-import os
+import threading
 
+app = Flask(__name__)
+CORS(app)
+
+# Azure Event Hub Config (for predictions)
 EVENT_HUB_CONNECTION_STR = "Endpoint=sb://crav-eventhub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=B8hY9hRcZLOcYTzYhklGCXCYCHEF0FCFY+AEhMbBz8k="
-EVENT_HUB_NAME = "alphabet-topic"
+EVENT_HUB_NAME = "predictions-topic"  # Now listening to the predictions
 CONSUMER_GROUP = "$Default"
-SAVE_DIR = "received_images"  # Directory to store received images
 
-# Ensure save directory exists
-os.makedirs(SAVE_DIR, exist_ok=True)
-
-# Function to generate unique filename
-def get_unique_filename():
-    existing_files = [f for f in os.listdir(SAVE_DIR) if f.endswith(".jpg")]
-    next_index = len(existing_files) + 1
-    return os.path.join(SAVE_DIR, f"received_image_{next_index}.jpg")
+# Store received predictions
+received_predictions = []
 
 def on_event(partition_context, event):
-    print(f"✅ Received event from partition {partition_context.partition_id}")
+    global received_predictions
+    prediction = event.body_as_str()
 
-    try:
-        # Ensure data is received as a base64 string
-        image_data_base64 = event.body_as_str()
-        print(f"🔹 Received Base64 (First 200 chars): {image_data_base64[:200]}")
+    print(f"✅ Received Prediction: {prediction}")
 
-        # Decode the Base64 Image
-        binary_image = base64.b64decode(image_data_base64)
-
-        # Generate unique filename
-        image_path = get_unique_filename()
-
-        # Save the decoded image
-        with open(image_path, "wb") as image_file:
-            image_file.write(binary_image)
-
-        print(f"✅ Image successfully saved as {image_path}")
-
-    except Exception as e:
-        print(f"❌ Error decoding image: {str(e)}")
+    # Append the new prediction to the list
+    received_predictions.append(prediction)
 
     partition_context.update_checkpoint(event)  # Checkpoint the event
 
-consumer = EventHubConsumerClient.from_connection_string(
-    EVENT_HUB_CONNECTION_STR, consumer_group=CONSUMER_GROUP, eventhub_name=EVENT_HUB_NAME
-)
+# Flask Route to send predictions to the webpage
+@app.route("/messages", methods=["GET"])
+def get_messages():
+    return jsonify({"messages": received_predictions})
 
-print("🔄 Listening for events...")
-
-with consumer:
-    consumer.receive(
-        on_event=on_event,
-        starting_position="-1",  # Start from the beginning
+# Start Event Hub consumer in a separate thread
+def start_consumer():
+    consumer = EventHubConsumerClient.from_connection_string(
+        EVENT_HUB_CONNECTION_STR, consumer_group=CONSUMER_GROUP, eventhub_name=EVENT_HUB_NAME
     )
+    print("� Listening for predictions...")
+    with consumer:
+        consumer.receive(on_event=on_event, starting_position="-1")
+
+# Start Flask server and consumer in parallel
+if __name__ == "__main__":
+    threading.Thread(target=start_consumer, daemon=True).start()
+    app.run(host="0.0.0.0", port=5002, debug=True)
