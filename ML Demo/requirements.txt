@@ -2,8 +2,29 @@
 # The Python Worker is managed by Azure Functions platform
 # Manually managing azure-functions-worker may cause unexpected issues
 
-azure-functions
-azure.eventhubs
-pillow_heic
+# Flask & Web Server
 flask
-flask_cors
+flask-cors
+gunicorn  # If deploying with a production server
+
+# Azure SDK & Event Hubs
+azure-functions
+azure-eventhub
+azure-storage-blob
+azure-identity
+
+# WebSockets
+flask-socketio
+eventlet  # Needed for async WebSockets
+gevent
+gevent-websocket
+
+# Data Processing
+requests
+
+# Image Processing
+pillow
+pillow-heif  # If you're working with HEIC/HEIF image formats
+
+
+#run pip install -r requirements.txt to install the dependencies
