@@ -38,6 +38,17 @@
             white-space: pre-wrap;
             font-size: 18px;
         }
+
+        .info-box {
+            margin: 20px auto;
+            width: 80%;
+            padding: 15px;
+            background-color: #e6f7ff;
+            border: 1px solid #91d5ff;
+            border-radius: 5px;
+            text-align: left;
+            font-size: 14px;
+        }
     </style>
     <script>
         async function uploadImages(event) {
@@ -108,6 +119,12 @@
 </head>
 <body>
     <h2>Upload Handwritten Letters</h2>
+    <div class="info-box">
+        <p><strong>Note:</strong> This application uses Azure Custom Vision for handwriting recognition. 
+        Images you upload are saved to blob storage and processed for prediction using a pre-trained model.</p>
+        <p>To train or improve the model with new images, you must manually upload and tag them through the 
+        <a href="https://www.customvision.ai/" target="_blank">Azure Custom Vision portal</a>.</p>
+    </div>
     <form onsubmit="uploadImages(event)">
         <input type="file" id="fileInput" multiple accept="image/*" required>
         <button type="submit">Submit</button>

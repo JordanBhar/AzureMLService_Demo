@@ -12,6 +12,8 @@ azure-functions
 azure-eventhub
 azure-storage-blob
 azure-identity
+azure-cognitiveservices-vision-customvision  # Custom Vision SDK
+msrest  # For ApiKeyCredentials
 
 # WebSockets
 flask-socketio
@@ -24,7 +26,7 @@ requests
 
 # Image Processing
 pillow
-pillow-heif  # If you're working with HEIC/HEIF image formats
+pillow-heif  # For HEIC/HEIF image formats
 
 
 #run pip install -r requirements.txt to install the dependencies

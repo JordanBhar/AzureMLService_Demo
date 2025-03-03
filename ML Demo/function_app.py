@@ -1,153 +1,107 @@
 import azure.functions as func
 import requests
-import os
 import json
 import logging
 import base64
 import io
+import datetime
 from PIL import Image
-import pillow_heif  # For HEIF/HEIC support
+from azure.storage.blob import BlobServiceClient, ContentSettings
+from azure.cognitiveservices.vision.customvision.prediction import CustomVisionPredictionClient
+from msrest.authentication import ApiKeyCredentials
 from azure.eventhub import EventHubProducerClient, EventData
 
-# ✅ Define the FunctionApp instance
+# Load config from JSON instead of environment variables
+def load_config(json_path="local.settings.json"):
+    try:
+        with open(json_path, "r") as config_file:
+            config = json.load(config_file)
+            return config.get("Values", {})
+    except Exception as e:
+        raise RuntimeError(f"Error loading config: {str(e)}")
+
+CONFIG = load_config()
+
+# Initialize Azure Function App
 app = func.FunctionApp()
 
-# ✅ Ensure correct Event Hub name and connection settings
-@app.event_hub_message_trigger(
-    arg_name="event",
-    event_hub_name="alphabet-topic",  # ✅ Using the alphabet-topic
-    connection="EventHubConnectionString"  # ✅ Using CRAV EventHub connection string
-)
+def get_custom_vision_client(endpoint, key):
+    credentials = ApiKeyCredentials(in_headers={"Ocp-Apim-Subscription-Key": key})
+    return CustomVisionPredictionClient(endpoint, credentials)
+
+def upload_image_to_blob(image_data, container_name, blob_name):
+    """
+    Upload image to blob storage for archiving purposes.
+    Note: For training Custom Vision models, images should be manually uploaded 
+    through the Azure Custom Vision portal (https://www.customvision.ai/).
+    """
+    blob_connection_string = CONFIG.get("AzuriteConnectionString")
+    if not blob_connection_string:
+        logging.error("AzuriteConnectionString is missing in JSON config.")
+        return
+    blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
+    container_client = blob_service_client.get_container_client(container_name)
+    container_client.upload_blob(blob_name, image_data, overwrite=True, content_settings=ContentSettings(content_type="image/jpeg"))
+    logging.info(f"Image uploaded to blob storage: {blob_name}")
+
+@app.event_hub_message_trigger(arg_name="event", event_hub_name=CONFIG.get("EVENT_HUB_NAME"), connection="EventHubConnectionString")
 def main(event: func.EventHubEvent):
     """
-    Azure Function triggered by Event Hub (alphabet-topic in CRAV-EventHub).
-    Processes an image from the event message, sends it to Azure Custom Vision,
-    and forwards the prediction to the predictions-topic Event Hub.
+    Process images from Event Hub:
+    1. Save the image locally and to blob storage
+    2. Use the Custom Vision Prediction API to classify the image
+    3. Send the prediction results to another Event Hub
+
+    Note: This function only handles prediction. For training the Custom Vision model,
+    use the Azure Custom Vision portal (https://www.customvision.ai/) to manually
+    upload and tag images, then train and publish the model.
     """
     try:
-        # Get the raw event body
-        raw_event_body = event.get_body()
-        
-        # Try to decode as UTF-8 (assuming it's base64-encoded image data)
+        base64_data = event.get_body().decode("utf-8")
+        image_data = base64.b64decode(base64_data)
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        filename = f"received_image_{timestamp}.jpg"
+        save_path = f"/tmp/{filename}"  # Use /tmp for Azure Functions compatibility
+
         try:
-            # Decode the message as UTF-8 (it should be base64-encoded)
-            base64_data = raw_event_body.decode("utf-8")
-            logging.info(f"Received base64 data of length: {len(base64_data)}")
-            
-            # Decode the base64 data to get the binary image data
-            image_data = base64.b64decode(base64_data)
-            logging.info(f"Decoded binary data of length: {len(image_data)}")
-            
-            # Save the image locally
-            filename = "received_image.jpg"
-            save_path = os.path.join(os.getcwd(), filename)
-            
-            # Try to open the image with Pillow to handle different formats
-            try:
-                # First try to open as HEIF/HEIC
-                try:
-                    heif_image = pillow_heif.open_heif(io.BytesIO(image_data))
-                    image = Image.frombytes(heif_image.mode, heif_image.size, heif_image.data)
-                    logging.info("Successfully processed HEIF/HEIC image")
-                except Exception as heif_error:
-                    logging.info(f"Not a HEIF/HEIC image or error processing: {str(heif_error)}")
-                    # If not HEIF/HEIC, try to open with regular PIL
-                    image = Image.open(io.BytesIO(image_data))
-                    logging.info("Successfully opened image with PIL")
-                
-                # Save the image as JPEG
-                image.save(save_path, format="JPEG")
-                logging.info(f"Image saved locally at: {save_path}")
-                
-            except Exception as img_error:
-                logging.error(f"Error processing image data: {str(img_error)}")
-                # If we can't process with PIL, just save the raw binary data
-                with open(save_path, "wb") as file:
-                    file.write(image_data)
-                logging.info(f"Raw binary data saved locally at: {save_path}")
-                
-        except UnicodeDecodeError as e:
-            # If we can't decode as UTF-8, it might be raw binary data
-            logging.info(f"Event doesn't appear to be UTF-8 encoded: {str(e)}. Treating as raw binary data.")
-            
-            # Save the binary data directly as an image
-            filename = "direct_image.jpg"
-            save_path = os.path.join(os.getcwd(), filename)
-            
-            with open(save_path, "wb") as file:
-                file.write(raw_event_body)
-                
-            logging.info(f"Raw binary data saved locally at: {save_path}")
-        
-        # ✅ Fetch Custom Vision credentials from environment variables
-        endpoint = os.getenv("CustomVisionEndpoint")
-        project_id = os.getenv("CustomVisionProjectId")
-        prediction_key = os.getenv("CustomVisionPredictionKey")
-        
-        if not all([endpoint, project_id, prediction_key]):
-            logging.error("Missing Azure Custom Vision credentials in environment variables")
+            image = Image.open(io.BytesIO(image_data))
+            image.save(save_path, format="JPEG")
+            logging.info(f"Image saved at: {save_path}")
+        except Exception as e:
+            logging.error(f"Error saving image: {str(e)}")
             return
-        
-        # ✅ Send the image to Azure Custom Vision for prediction
-        # We'll use the image file API instead of the URL API
-        url = f"{endpoint}/customvision/v3.0/Prediction/{project_id}/classify/iterations/Iteration1/image"
-        headers = {
-            "Prediction-Key": prediction_key,
-            "Content-Type": "application/octet-stream",
-        }
-        
-        # Read the saved image file
-        with open(save_path, "rb") as image_file:
-            image_data = image_file.read()
-        
-        try:
-            # Send the image data directly to Custom Vision
-            response = requests.post(url, headers=headers, data=image_data)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"Prediction Result: {json.dumps(result, indent=4)}")
-            
-            # Extract the top prediction
-            if "predictions" in result and len(result["predictions"]) > 0:
-                top_prediction = result["predictions"][0]
-                prediction_text = f"Predicted: {top_prediction['tagName']} ({top_prediction['probability']:.2f})"
-                logging.info(f"Top prediction: {prediction_text}")
-                
-                # Send the prediction to the predictions-topic Event Hub
-                try:
-                    # Get the Event Hub connection string from environment variables
-                    event_hub_conn_str = os.getenv("EventHubConnectionString")
-                    if not event_hub_conn_str:
-                        logging.error("Missing EventHubConnectionString environment variable")
-                        return
-                    
-                    # Initialize EventHub Producer for predictions-topic
-                    producer = EventHubProducerClient.from_connection_string(
-                        event_hub_conn_str, 
-                        eventhub_name="predictions-topic"
-                    )
-                    
-                    # Send the prediction as an event
-                    with producer:
-                        event_data = EventData(prediction_text)
-                        producer.send_batch([event_data])
-                    
-                    logging.info(f"Prediction sent to predictions-topic Event Hub: {prediction_text}")
-                    
-                except Exception as eh_error:
-                    logging.error(f"Error sending prediction to Event Hub: {str(eh_error)}")
-            else:
-                logging.warning("No predictions found in the result")
-                
-        except requests.RequestException as e:
-            logging.error(f"Error calling Azure Custom Vision API: {str(e)}")
-            if hasattr(e, 'response') and e.response is not None:
-                logging.error(f"Response status: {e.response.status_code}")
-                logging.error(f"Response text: {e.response.text}")
+
+        # Save image to blob storage for archiving or later manual training
+        upload_image_to_blob(image_data, "training-images", filename)
+
+        # Fetch Custom Vision API details from JSON config
+        prediction_endpoint = CONFIG.get("VISION_PREDICTION_ENDPOINT")
+        project_id = CONFIG.get("CustomVisionProjectId")
+        prediction_key = CONFIG.get("VISION_PREDICTION_KEY")
+
+        if not all([prediction_endpoint, project_id, prediction_key]):
+            logging.error("Missing Custom Vision API configuration")
             return
-        
-        return func.HttpResponse(json.dumps(result), mimetype="application/json")
-        
+
+        predictor = get_custom_vision_client(prediction_endpoint, prediction_key)
+        published_name = CONFIG.get("CustomVisionPublishedName", "Iteration1")
+        results = predictor.classify_image(project_id, published_name, image_data)
+
+        if results.predictions:
+            top_prediction = results.predictions[0]
+            prediction_text = f"Predicted: {top_prediction.tag_name} ({top_prediction.probability:.2f})"
+            logging.info(prediction_text)
+
+            event_hub_conn_str = CONFIG.get("EventHubConnectionString")
+            producer = EventHubProducerClient.from_connection_string(event_hub_conn_str, eventhub_name="predictions-topic")
+            with producer:
+                event_data = EventData(prediction_text)
+                producer.send_batch([event_data])
+
+            logging.info(f"Prediction sent to Event Hub: {prediction_text}")
+        else:
+            logging.warning("No predictions found.")
+
     except Exception as e:
-        logging.error(f"Unexpected error in function: {str(e)}")
-        return func.HttpResponse(f"Error: {str(e)}", status_code=500)
+        logging.error(f"Unexpected error: {str(e)}")
