@@ -3,10 +3,13 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "python",
-    "CRAVEventHub_RootManageSharedAccessKey_EVENTHUB": "Endpoint=sb://crav-eventhub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=B8hY9hRcZLOcYTzYhklGCXCYCHEF0FCFY+AEhMbBz8k=;EntityPath=alphabet-topic",
-    "EVENT_HUB_NAME": "alphabet-topic"
+
+    "EventHubConnectionString": "Endpoint=sb://crav-eventhub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=B8hY9hRcZLOcYTzYhklGCXCYCHEF0FCFY+AEhMbBz8k=",
+    "EVENT_HUB_NAME": "alphabet-topic",
+
+    "CustomVisionTrainingKey": "your-custom-vision-training-key",
+    "CustomVisionPredictionKey": "your-custom-vision-prediction-key",
+    "CustomVisionProjectId": "751af4f8-9981-4c90-99cc-2a66c084102e",
+    "CustomVisionEndpoint": "your-custom-vision-endpoint"
   }
 }
-
-
-
