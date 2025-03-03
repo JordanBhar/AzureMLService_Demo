@@ -11,8 +11,9 @@ EVENT_HUB_CONNECTION_STR = "Endpoint=sb://crav-eventhub.servicebus.windows.net/;
 EVENT_HUB_NAME = "predictions-topic"  # Now listening to the predictions
 CONSUMER_GROUP = "$Default"
 
-# Store received predictions
+# Store received predictions and track which ones have been delivered
 received_predictions = []
+delivered_predictions = set()
 
 def on_event(partition_context, event):
     global received_predictions
@@ -28,7 +29,19 @@ def on_event(partition_context, event):
 # Flask Route to send predictions to the webpage
 @app.route("/messages", methods=["GET"])
 def get_messages():
-    return jsonify({"messages": received_predictions})
+    global received_predictions, delivered_predictions
+    
+    # Get only predictions that haven't been delivered yet
+    new_predictions = [p for p in received_predictions if p not in delivered_predictions]
+    
+    # Mark these predictions as delivered
+    delivered_predictions.update(new_predictions)
+    
+    # Return all predictions for reference, but also flag which ones are new
+    return jsonify({
+        "all_messages": received_predictions,
+        "new_messages": new_predictions
+    })
 
 # Start Event Hub consumer in a separate thread
 def start_consumer():
