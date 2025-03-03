@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "@azure/cognitiveservices-customvision-prediction": "^5.1.2",
+    "@azure/cognitiveservices-customvision-training": "^5.2.0",
     "azurite": "^3.33.0"
   }
 }
