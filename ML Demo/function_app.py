@@ -26,7 +26,16 @@ CONFIG = load_config()
 app = func.FunctionApp()
 
 def get_custom_vision_client(endpoint, key):
-    credentials = ApiKeyCredentials(in_headers={"Ocp-Apim-Subscription-Key": key})
+    """
+    Create a Custom Vision prediction client.
+    The endpoint should be the base endpoint without the project ID.
+    Example: https://southcentralus.api.cognitive.microsoft.com/
+    """
+    # Ensure the endpoint ends with a slash
+    if not endpoint.endswith('/'):
+        endpoint += '/'
+        
+    credentials = ApiKeyCredentials(in_headers={"Prediction-Key": key, "Ocp-Apim-Subscription-Key": key})
     return CustomVisionPredictionClient(endpoint, credentials)
 
 def upload_image_to_blob(image_data, container_name, blob_name):
@@ -84,9 +93,39 @@ def main(event: func.EventHubEvent):
             logging.error("Missing Custom Vision API configuration")
             return
 
-        predictor = get_custom_vision_client(prediction_endpoint, prediction_key)
-        published_name = CONFIG.get("CustomVisionPublishedName", "Iteration1")
-        results = predictor.classify_image(project_id, published_name, image_data)
+        # Fix the endpoint URL format - it should be the base URL without the trailing path
+        # Example: https://southcentralus.api.cognitive.microsoft.com/
+        base_endpoint = prediction_endpoint
+        if "customvision/v3.0/Prediction/" in base_endpoint:
+            base_endpoint = base_endpoint.split("customvision")[0]
+            logging.info(f"Adjusted base endpoint to: {base_endpoint}")
+
+        try:
+            predictor = get_custom_vision_client(base_endpoint, prediction_key)
+            published_name = CONFIG.get("CustomVisionPublishedName", "Iteration1")
+            
+            # Log the parameters being used
+            logging.info(f"Making prediction with: Project ID: {project_id}, Published Name: {published_name}")
+            
+            # Use a try block specifically for the API call
+            try:
+                results = predictor.classify_image(project_id, published_name, image_data)
+                logging.info("Custom Vision API call successful")
+            except Exception as api_error:
+                logging.error(f"Custom Vision API error: {str(api_error)}")
+                # Try with a different method if the first one fails
+                try:
+                    logging.info("Attempting alternative method with image URL...")
+                    # This is a fallback in case the direct image data method fails
+                    blob_url = f"http://127.0.0.1:10000/devstoreaccount1/training-images/{filename}"
+                    results = predictor.classify_image_url(project_id, published_name, {"url": blob_url})
+                    logging.info("Custom Vision API call with URL successful")
+                except Exception as url_api_error:
+                    logging.error(f"Custom Vision API URL method error: {str(url_api_error)}")
+                    raise
+        except Exception as cv_error:
+            logging.error(f"Error setting up Custom Vision client: {str(cv_error)}")
+            raise
 
         if results.predictions:
             top_prediction = results.predictions[0]
