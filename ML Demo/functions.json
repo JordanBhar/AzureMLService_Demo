@@ -1,0 +1,13 @@
+{
+  "bindings": [
+    {
+      "type": "eventHubTrigger",
+      "name": "event",
+      "direction": "in",
+      "eventHubName": "alphabet-topic",
+      "connection": "EventHubConnectionString",
+      "cardinality": "one",
+      "consumerGroup": "$Default"
+    }
+  ]
+}
