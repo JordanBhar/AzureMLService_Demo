@@ -11,11 +11,8 @@
     "VISION_PREDICTION_ENDPOINT": "https://southcentralus.api.cognitive.microsoft.com/",
     "VISION_PREDICTION_RESOURCE_ID": "/subscriptions/15001ce8-e8af-43e9-bb61-44a90f2aeb0b/resourceGroups/eventhub-rg/providers/Microsoft.CognitiveServices/accounts/Letter-Cognitive-Resource",
     "CustomVisionProjectId": "cbee8ca2-8563-433a-9471-034e6bd65ee0",
-    "CustomVisionPublishedName": "classifyModel",
+    "CustomVisionPublishedName": "Iteration1",
     
     "AzuriteConnectionString": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
-  },
-  "Comments": {
-    "CustomVision": "Training is done manually through the Azure Custom Vision portal (https://www.customvision.ai/). Upload and tag images there, then train and publish the model."
   }
 }
