@@ -5,19 +5,34 @@ import logging
 import base64
 import io
 import datetime
+import os
 from PIL import Image
 from azure.storage.blob import BlobServiceClient
 from azure.eventhub import EventHubProducerClient, EventData
 from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv
 
-# Load config from JSON instead of environment variables
+# Load environment variables from .env file if it exists
+load_dotenv()
+
+# Enhanced config loading function that prioritizes environment variables
 def load_config(json_path="local.settings.json"):
+    # First, try to get settings from environment variables
+    env_config = {}
+    
+    # Then, try to load from local.settings.json as fallback
+    file_config = {}
     try:
         with open(json_path, "r") as config_file:
-            config = json.load(config_file)
-            return config.get("Values", {})
+            settings = json.load(config_file)
+            file_config = settings.get("Values", {})
     except Exception as e:
-        raise RuntimeError(f"Error loading config: {str(e)}")
+        logging.warning(f"Could not load settings from {json_path}: {str(e)}")
+    
+    # Merge configurations, with environment variables taking precedence
+    config = {**file_config, **{k: v for k, v in os.environ.items() if v}}
+    
+    return config
 
 CONFIG = load_config()
 

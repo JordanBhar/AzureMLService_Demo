@@ -7,6 +7,9 @@ flask
 flask-cors
 gunicorn  # If deploying with a production server
 
+# Configuration
+python-dotenv  # For loading environment variables from .env file
+
 # Azure SDK & Event Hubs
 azure-functions
 azure-eventhub
