@@ -4,10 +4,26 @@
       "type": "eventHubTrigger",
       "name": "event",
       "direction": "in",
-      "eventHubName": "alphabet-topic",
+      "eventHubName": "%ALPHABET_EVENT_HUB%",
       "connection": "EventHubConnectionString",
       "cardinality": "one",
-      "consumerGroup": "$Default"
+      "consumerGroup": "%CONSUMER_GROUP%"
+    },
+    {
+      "authLevel": "function",
+      "type": "httpTrigger",
+      "direction": "in",
+      "name": "req",
+      "methods": [
+        "get",
+        "post"
+      ],
+      "route": "manual-training"
+    },
+    {
+      "type": "http",
+      "direction": "out",
+      "name": "$return"
     }
   ]
 }

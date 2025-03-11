@@ -6,10 +6,9 @@ import base64
 import io
 import datetime
 from PIL import Image
-from azure.storage.blob import BlobServiceClient, ContentSettings
-from azure.cognitiveservices.vision.customvision.prediction import CustomVisionPredictionClient
-from msrest.authentication import ApiKeyCredentials
+from azure.storage.blob import BlobServiceClient
 from azure.eventhub import EventHubProducerClient, EventData
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Load config from JSON instead of environment variables
 def load_config(json_path="local.settings.json"):
@@ -25,122 +24,133 @@ CONFIG = load_config()
 # Initialize Azure Function App
 app = func.FunctionApp()
 
-def get_custom_vision_client(endpoint, key):
-    """
-    Create a Custom Vision prediction client.
-    The endpoint should be the base endpoint without the project ID.
-    Example: https://southcentralus.api.cognitive.microsoft.com/
-    """
-    # Ensure the endpoint ends with a slash
-    if not endpoint.endswith('/'):
-        endpoint += '/'
-        
-    credentials = ApiKeyCredentials(in_headers={"Prediction-Key": key, "Ocp-Apim-Subscription-Key": key})
-    return CustomVisionPredictionClient(endpoint, credentials)
+# Initialize the scheduler to run the training function every 12 hours
+scheduler = BackgroundScheduler()
 
-def upload_image_to_blob(image_data, container_name, blob_name):
-    """
-    Upload image to blob storage for archiving purposes.
-    Note: For training Custom Vision models, images should be manually uploaded 
-    through the Azure Custom Vision portal (https://www.customvision.ai/).
-    """
-    blob_connection_string = CONFIG.get("AzuriteConnectionString")
-    if not blob_connection_string:
-        logging.error("AzuriteConnectionString is missing in JSON config.")
-        return
-    blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
-    container_client = blob_service_client.get_container_client(container_name)
-    container_client.upload_blob(blob_name, image_data, overwrite=True, content_settings=ContentSettings(content_type="image/jpeg"))
-    logging.info(f"Image uploaded to blob storage: {blob_name}")
+# Initialize Azure Blob Storage client
+BLOB_STORAGE_CONNECTION_STRING = CONFIG.get("AZURE_BLOB_STORAGE_CONNECTION_STRING")
+blob_service_client = BlobServiceClient.from_connection_string(BLOB_STORAGE_CONNECTION_STRING)
 
-@app.event_hub_message_trigger(arg_name="event", event_hub_name=CONFIG.get("EVENT_HUB_NAME"), connection="EventHubConnectionString")
-def main(event: func.EventHubEvent):
-    """
-    Process images from Event Hub:
-    1. Save the image locally and to blob storage
-    2. Use the Custom Vision Prediction API to classify the image
-    3. Send the prediction results to another Event Hub
 
-    Note: This function only handles prediction. For training the Custom Vision model,
-    use the Azure Custom Vision portal (https://www.customvision.ai/) to manually
-    upload and tag images, then train and publish the model.
+
+@app.event_hub_message_trigger(arg_name="event", event_hub_name=CONFIG.get("ALPHABET_EVENT_HUB"), connection="EventHubConnectionString")
+def process_single_image(event: func.EventHubEvent):
+    """
+    Process a single image event from Event Hub:
+    1. Log the received image data for testing
+    2. [TODO] Send the image to Azure ML for inference (commented out for now)
+    3. [TODO] Send the prediction results to another Event Hub (commented out for now)
+    
+    Note: Image storage is handled automatically by Azure Event Hubs capture
     """
     try:
+        # Get the event data
         base64_data = event.get_body().decode("utf-8")
         image_data = base64.b64decode(base64_data)
-
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        filename = f"received_image_{timestamp}.jpg"
-        save_path = f"/tmp/{filename}"  # Use /tmp for Azure Functions compatibility
-
-        try:
-            image = Image.open(io.BytesIO(image_data))
-            image.save(save_path, format="JPEG")
-            logging.info(f"Image saved at: {save_path}")
-        except Exception as e:
-            logging.error(f"Error saving image: {str(e)}")
-            return
-
-        # Save image to blob storage for archiving or later manual training
-        upload_image_to_blob(image_data, "training-images", filename)
-
-        # Fetch Custom Vision API details from JSON config
-        prediction_endpoint = CONFIG.get("VISION_PREDICTION_ENDPOINT")
-        project_id = CONFIG.get("CustomVisionProjectId")
-        prediction_key = CONFIG.get("VISION_PREDICTION_KEY")
-
-        if not all([prediction_endpoint, project_id, prediction_key]):
-            logging.error("Missing Custom Vision API configuration")
-            return
-
-        # Fix the endpoint URL format - it should be the base URL without the trailing path
-        # Example: https://southcentralus.api.cognitive.microsoft.com/
-        base_endpoint = prediction_endpoint
-        if "customvision/v3.0/Prediction/" in base_endpoint:
-            base_endpoint = base_endpoint.split("customvision")[0]
-            logging.info(f"Adjusted base endpoint to: {base_endpoint}")
-
-        try:
-            predictor = get_custom_vision_client(base_endpoint, prediction_key)
-            published_name = CONFIG.get("CustomVisionPublishedName", "Iteration1")
-            
-            # Log the parameters being used
-            logging.info(f"Making prediction with: Project ID: {project_id}, Published Name: {published_name}")
-            
-            # Use a try block specifically for the API call
-            try:
-                results = predictor.classify_image(project_id, published_name, image_data)
-                logging.info("Custom Vision API call successful")
-            except Exception as api_error:
-                logging.error(f"Custom Vision API error: {str(api_error)}")
-                # Try with a different method if the first one fails
-                try:
-                    logging.info("Attempting alternative method with image URL...")
-                    # This is a fallback in case the direct image data method fails
-                    blob_url = f"http://127.0.0.1:10000/devstoreaccount1/training-images/{filename}"
-                    results = predictor.classify_image_url(project_id, published_name, {"url": blob_url})
-                    logging.info("Custom Vision API call with URL successful")
-                except Exception as url_api_error:
-                    logging.error(f"Custom Vision API URL method error: {str(url_api_error)}")
-                    raise
-        except Exception as cv_error:
-            logging.error(f"Error setting up Custom Vision client: {str(cv_error)}")
-            raise
-
-        if results.predictions:
-            top_prediction = results.predictions[0]
-            prediction_text = f"Predicted: {top_prediction.tag_name} ({top_prediction.probability:.2f})"
-            logging.info(prediction_text)
-
-            event_hub_conn_str = CONFIG.get("EventHubConnectionString")
-            producer = EventHubProducerClient.from_connection_string(event_hub_conn_str, eventhub_name="predictions-topic")
-            with producer:
-                event_data = EventData(prediction_text)
-                producer.send_batch([event_data])
-
-            logging.info(f"Prediction sent to Event Hub: {prediction_text}")
-        else:
-            logging.warning("No predictions found.")
-
+        
+        # Log information about the received image
+        image_size_kb = len(image_data) / 1024
+        timestamp = datetime.datetime.now().isoformat()
+        logging.info(f"✅ Received image from Event Hub at {timestamp}")
+        logging.info(f"✅ Image size: {image_size_kb:.2f} KB")
+        
     except Exception as e:
-        logging.error(f"Unexpected error: {str(e)}")
+        logging.error(f"❌ Unexpected error in single image processing: {str(e)}")
+
+
+# Optional: Create a function that can be triggered manually to start training
+@app.route(route="manual-training")
+def manual_training_trigger(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    HTTP trigger function that allows manual triggering of the training process.
+    This can be called via an HTTP request to start training on demand.
+    """
+    logging.info("Manual training triggered via HTTP request")
+    
+    try:
+        train_model_from_blob_storage()
+        return func.HttpResponse(
+            "Training process started successfully",
+            status_code=200
+        )
+    except Exception as e:
+        return func.HttpResponse(
+            f"Error starting training process: {str(e)}",
+            status_code=500
+        )
+
+#
+# FUNCTION 1: SINGLE IMAGE PREDICTION
+#
+
+def call_azure_ml(image_data):
+    """
+    Send image data directly to Azure ML for inference.
+    """
+    # ===== TODO: IMPLEMENT ML PREDICTION ENDPOINT CALL =====
+    # This function will be implemented later to call the Azure ML endpoint
+    # for image prediction. For now, it's commented out for testing.
+    
+    ml_endpoint = CONFIG.get("AZURE_ML_PREDICTION_ENDPOINT")
+    ml_key = CONFIG.get("AZURE_ML_KEY")
+
+    if not ml_endpoint or not ml_key:
+        logging.error("Missing Azure ML endpoint or key in config.")
+        return None
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {ml_key}"
+    }
+    
+    payload = {"input_data": {"image": image_data.decode("latin1")}}
+
+    try:
+        response = requests.post(ml_endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+        prediction_result = response.json()
+        logging.info(f"✅ ML Prediction: {prediction_result}")
+        return prediction_result
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ Azure ML request failed: {e}")
+        return None
+    
+    # For testing, return a mock prediction result
+    logging.info("⚠️ Using mock prediction (ML endpoint call is disabled)")
+    return {"prediction": "mock_result", "confidence": 0.95}
+
+#
+# FUNCTION 2: BATCH TRAINING (EVERY 12 HOURS)
+#
+
+def train_model_from_blob_storage():
+    """
+    Fetch all images from blob storage and log their details for training simulation.
+    This function runs every 12 hours.
+    """
+    container_name = "inference-images"
+    container_client = blob_service_client.get_container_client(container_name)
+
+    try:
+        logging.info(f"🔄 Starting blob storage training simulation at {datetime.datetime.now().isoformat()}")
+        
+        blob_list = list(container_client.list_blobs())
+        
+        if not blob_list:
+            logging.info("⚠️ No images found in blob storage.")
+            return
+        
+        logging.info(f"✅ Simulating sending {len(blob_list)} images for training:")
+        for index, blob in enumerate(blob_list):
+            logging.info(f"  {index+1}. {blob.name} - {blob.size/1024:.2f} KB - Last modified: {blob.last_modified}")
+            
+        logging.info("✅ Training simulation completed.")
+        
+    except Exception as e:
+        logging.error(f"❌ Error during training simulation: {e}")
+
+
+
+scheduler.add_job(manual_training_trigger, "interval", minutes=1)
+scheduler.start()
+logging.info("🔄 Scheduler initialized - Blob storage check will run every 1 minute")

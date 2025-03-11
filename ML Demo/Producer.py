@@ -1,16 +1,30 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from azure.eventhub import EventHubProducerClient, EventData
-from PIL import Image
-import pillow_heif  # HEIC Support
 import base64
 import io
+import json
+from PIL import Image  # Missing import for handling images
+import pillow_heif  # If handling HEIC images, ensure this is imported
 
 app = Flask(__name__)
 CORS(app)
 
-EVENT_HUB_CONNECTION_STR = "Endpoint=sb://crav-eventhub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=B8hY9hRcZLOcYTzYhklGCXCYCHEF0FCFY+AEhMbBz8k="
-EVENT_HUB_NAME = "alphabet-topic"
+# Load config from JSON instead of hardcoding values
+def load_config(json_path="local.settings.json"):
+    try:
+        with open(json_path, "r") as config_file:
+            config = json.load(config_file)
+            return config.get("Values", {})
+    except Exception as e:
+        print(f"Error loading config: {str(e)}")
+        return {}
+
+CONFIG = load_config()
+
+# Get connection settings from config
+EVENT_HUB_CONNECTION_STR = CONFIG.get("EventHubConnectionString")
+EVENT_HUB_NAME = CONFIG.get("ALPHABET_EVENT_HUB")
 
 @app.route("/upload", methods=["POST"])
 def upload_images():

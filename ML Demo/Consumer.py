@@ -2,14 +2,27 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from azure.eventhub import EventHubConsumerClient
 import threading
+import json
 
 app = Flask(__name__)
 CORS(app)
 
+# Load config from JSON instead of hardcoding values
+def load_config(json_path="local.settings.json"):
+    try:
+        with open(json_path, "r") as config_file:
+            config = json.load(config_file)
+            return config.get("Values", {})
+    except Exception as e:
+        print(f"Error loading config: {str(e)}")
+        return {}
+
+CONFIG = load_config()
+
 # Azure Event Hub Config (for predictions)
-EVENT_HUB_CONNECTION_STR = "Endpoint=sb://crav-eventhub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=B8hY9hRcZLOcYTzYhklGCXCYCHEF0FCFY+AEhMbBz8k="
-EVENT_HUB_NAME = "predictions-topic"  # Now listening to the predictions
-CONSUMER_GROUP = "$Default"
+EVENT_HUB_CONNECTION_STR = CONFIG.get("EventHubConnectionString")
+EVENT_HUB_NAME = CONFIG.get("PREDICTIONS_EVENT_HUB")  # Now listening to the predictions
+CONSUMER_GROUP = CONFIG.get("CONSUMER_GROUP")
 
 # Store received predictions and track which ones have been delivered
 received_predictions = []

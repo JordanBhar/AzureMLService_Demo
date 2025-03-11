@@ -5,63 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Handwriting Recognition</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 40px;
-        }
-
-        #previewContainer {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            margin-top: 20px;
-        }
-
-        .previewImage {
-            max-width: 150px;
-            margin: 10px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        }
-
-        #predictionBox {
-            margin: 30px auto;
-            width: 60%;
-            height: 250px;
-            border: 2px solid #333;
-            background-color: #f0f0f0;
-            text-align: left;
-            padding: 15px;
-            overflow-y: scroll;
-            white-space: pre-wrap;
-            font-size: 18px;
-        }
-
-        .info-box {
-            margin: 20px auto;
-            width: 80%;
-            padding: 15px;
-            background-color: #e6f7ff;
-            border: 1px solid #91d5ff;
-            border-radius: 5px;
-            text-align: left;
-            font-size: 14px;
-        }
-        
-        button {
-            margin: 5px;
-            padding: 8px 15px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        
-        button:hover {
-            background-color: #45a049;
-        }
+        body { font-family: Arial, sans-serif; text-align: center; margin: 40px; }
+        #previewContainer { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 20px; }
+        .previewImage { max-width: 150px; margin: 10px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+        #predictionBox { margin: 30px auto; width: 60%; height: 250px; border: 2px solid #333; background-color: #f0f0f0;
+                         text-align: left; padding: 15px; overflow-y: scroll; white-space: pre-wrap; font-size: 18px; }
+        .info-box { margin: 20px auto; width: 80%; padding: 15px; background-color: #e6f7ff; border: 1px solid #91d5ff;
+                    border-radius: 5px; text-align: left; font-size: 14px; }
+        button { margin: 5px; padding: 8px 15px; background-color: #4CAF50; color: white; border: none;
+                 border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #45a049; }
     </style>
     <script>
         async function uploadImages(event) {
@@ -76,7 +29,7 @@
 
             let imagesBase64 = [];
             let previewContainer = document.getElementById("previewContainer");
-            previewContainer.innerHTML = "";  // Clear previous previews
+            previewContainer.innerHTML = "";  
 
             for (let file of files) {
                 let reader = new FileReader();
@@ -84,7 +37,6 @@
                 reader.onloadend = function () {
                     imagesBase64.push(reader.result);
 
-                    // Display image preview
                     let imgElement = document.createElement("img");
                     imgElement.src = reader.result;
                     imgElement.className = "previewImage";
@@ -92,24 +44,17 @@
                 };
             }
 
-            // Wait for all images to be processed
             await new Promise(resolve => setTimeout(resolve, 500));
 
             try {
                 let response = await fetch("http://localhost:5001/upload", {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        images: imagesBase64
-                    })
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ images: imagesBase64 })
                 });
 
                 let result = await response.json();
                 document.getElementById("predictionBox").innerText = "Waiting for prediction...";
-                
-                // Wait a moment for the prediction to be processed, then fetch once
                 setTimeout(fetchPredictions, 3000);
             } catch (error) {
                 document.getElementById("predictionBox").innerText = "Error: " + error.message;
@@ -123,37 +68,27 @@
                 if (result.all_messages && result.all_messages.length > 0) {
                     let box = document.getElementById("predictionBox");
                     box.innerHTML = result.all_messages.join("<br>");
-                    box.scrollTop = box.scrollHeight; // Auto-scroll to the bottom
+                    box.scrollTop = box.scrollHeight;
                 }
             } catch (error) {
                 console.error("Error fetching predictions:", error);
             }
         }
-        
-        // Function to handle manual refresh
-        function manualRefresh() {
-            fetchPredictions();
-        }
-        
-        // No more automatic polling
-        // Initial fetch when page loads
+
+        function manualRefresh() { fetchPredictions(); }
         document.addEventListener('DOMContentLoaded', fetchPredictions);
     </script>
 </head>
 <body>
     <h2>Upload Handwritten Letters</h2>
     <div class="info-box">
-        <p><strong>Note:</strong> This application uses Azure Custom Vision for handwriting recognition. 
-        Images you upload are saved to blob storage and processed for prediction using a pre-trained model.</p>
-        <p>To train or improve the model with new images, you must manually upload and tag them through the 
-        <a href="https://www.customvision.ai/" target="_blank">Azure Custom Vision portal</a>.</p>
+        <p><strong>Note:</strong> This application uses **Azure ML Studio** for handwriting recognition.</p>
     </div>
     <form onsubmit="uploadImages(event)">
         <input type="file" id="fileInput" multiple accept="image/*" required>
         <button type="submit">Submit</button>
     </form>
     <div id="previewContainer"></div>
-
     <h3>Predictions:</h3>
     <div id="predictionBox">Waiting for predictions...</div>
     <button onclick="manualRefresh()">Refresh Predictions</button>
