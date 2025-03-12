@@ -226,7 +226,7 @@ def train_model_from_blob_storage():
         blob_service_client = BlobServiceClient.from_connection_string(
             CONFIG.get("AZURE_BLOB_STORAGE_CONNECTION_STRING")
         )
-        container_name = "images"
+        container_name = "azureml-blobstore-3a7f6a43-9df4-409c-ba87-248c4cf01108"
         container_client = blob_service_client.get_container_client(container_name)
         
         # List blobs in the container
