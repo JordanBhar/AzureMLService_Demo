@@ -3,33 +3,31 @@
 # Manually managing azure-functions-worker may cause unexpected issues
 
 # Flask & Web Server
-flask
-flask-cors
-gunicorn  # If deploying with a production server
+flask==2.3.3
+flask-cors==4.0.0
+gunicorn==21.2.0  # If deploying with a production server
 
 # Configuration
-python-dotenv  # For loading environment variables from .env file
+python-dotenv==1.0.0  # For loading environment variables from .env file
 
 # Azure SDK & Event Hubs
-azure-functions
-azure-eventhub
-azure-storage-blob
-azure-identity
-azure-cognitiveservices-vision-customvision  # Custom Vision SDK
-msrest  # For ApiKeyCredentials
+azure-functions==1.17.0
+azure-eventhub==5.11.5
+azure-storage-blob==12.19.0
+azure-identity==1.15.0
+msrest==0.7.1
 
 # WebSockets
-flask-socketio
-eventlet  # Needed for async WebSockets
-gevent
-gevent-websocket
+flask-socketio==5.3.6
+eventlet==0.33.3  # Needed for async WebSockets
+gevent==23.9.1
+gevent-websocket==0.10.1
 
 # Data Processing
-requests
+requests==2.31.0
 
 # Image Processing
 pillow
-pillow-heif  # For HEIC/HEIF image formats
-
+pillow-heif
 
 #run pip install -r requirements.txt to install the dependencies
