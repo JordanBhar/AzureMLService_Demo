@@ -138,4 +138,4 @@ __azurite_db*__.json
 local.settings.json
 
 # Exclude environment files
-.env
+.envML Demo/local.settings.example.json
