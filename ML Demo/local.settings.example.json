@@ -13,7 +13,7 @@
     "PREDICTIONS_EVENT_HUB": "predictions-topic",
     "CONSUMER_GROUP": "$Default",
 
-    "AZURE_BLOB_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=alphabetstorage;AccountKey=Cvf9XcKxQGuqukmwm8edTtJn+NH1sdK55c+Sy92/ovIaFesFqgYuMKTaeXvp0bQgV4ltJYTXuZZE+AStwJTuQQ==;EndpointSuffix=core.windows.net",
+    "AZURE_BLOB_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=yourstorageaccount;AccountKey=yourstoragekey;EndpointSuffix=core.windows.net",
     
     "VISION_PREDICTION_KEY": "your-vision-prediction-key",
     "VISION_PREDICTION_ENDPOINT": "https://your-region.api.cognitive.microsoft.com/",
