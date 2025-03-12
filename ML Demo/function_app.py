@@ -9,7 +9,6 @@ import os
 from PIL import Image
 from azure.storage.blob import BlobServiceClient
 from azure.eventhub import EventHubProducerClient, EventData
-from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
 # Load environment variables from .env file if it exists
@@ -39,15 +38,6 @@ CONFIG = load_config()
 # Initialize Azure Function App
 app = func.FunctionApp()
 
-# Initialize the scheduler to run the training function every 12 hours
-scheduler = BackgroundScheduler()
-
-# Initialize Azure Blob Storage client
-BLOB_STORAGE_CONNECTION_STRING = CONFIG.get("AZURE_BLOB_STORAGE_CONNECTION_STRING")
-blob_service_client = BlobServiceClient.from_connection_string(BLOB_STORAGE_CONNECTION_STRING)
-
-
-
 @app.event_hub_message_trigger(arg_name="event", event_hub_name=CONFIG.get("ALPHABET_EVENT_HUB"), connection="EventHubConnectionString")
 def process_single_image(event: func.EventHubEvent):
     """
@@ -69,6 +59,9 @@ def process_single_image(event: func.EventHubEvent):
         logging.info(f"✅ Received image from Event Hub at {timestamp}")
         logging.info(f"✅ Image size: {image_size_kb:.2f} KB")
         
+        # Call Azure ML for prediction
+        # prediction_result = call_azure_ml(image_data)
+
     except Exception as e:
         logging.error(f"❌ Unexpected error in single image processing: {str(e)}")
 
@@ -139,6 +132,10 @@ def call_azure_ml(image_data):
 #
 
 def train_model_from_blob_storage():
+
+    blob_service_client = BlobServiceClient.from_connection_string(AZURE_BLOB_STORAGE_CONNECTION_STRING)
+
+
     """
     Fetch all images from blob storage and log their details for training simulation.
     This function runs every 12 hours.
@@ -164,8 +161,7 @@ def train_model_from_blob_storage():
     except Exception as e:
         logging.error(f"❌ Error during training simulation: {e}")
 
-
-
-scheduler.add_job(manual_training_trigger, "interval", minutes=1)
-scheduler.start()
-logging.info("🔄 Scheduler initialized - Blob storage check will run every 1 minute")
+@app.schedule(schedule="*/1 * * * *", arg_name="timer")  # Runs every 1 minute
+def scheduled_training_function(timer: func.TimerRequest):
+    logging.info("⏳ Scheduled training function triggered")
+    train_model_from_blob_storage()
