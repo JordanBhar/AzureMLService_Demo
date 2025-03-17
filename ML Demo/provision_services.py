@@ -12,6 +12,7 @@ from azure.mgmt.web import WebSiteManagementClient
 from azure.ai.ml import MLClient
 from azure.ai.ml.entities import Workspace
 from azure.mgmt.web.models import Site, SiteConfig, NameValuePair
+from config_utils import update_ml_workspace_name
 
 # Configure logging
 logging.basicConfig(
@@ -157,46 +158,19 @@ try:
     ml_client = MLClient(credential, SUBSCRIPTION_ID, RESOURCE_GROUP)
     ml_workspaces = {ws.name for ws in ml_client.workspaces.list()}
 
-    # Original workspace name from config
-    original_ml_workspace_name = ML_WORKSPACE_NAME
+    # Generate a new unique name for the workspace
+    ML_WORKSPACE_NAME = update_ml_workspace_name()
+    logging.info(f"Using ML workspace name: {ML_WORKSPACE_NAME}")
     
-    # Check if workspace exists
-    if ML_WORKSPACE_NAME in ml_workspaces:
-        logging.info(f"✅ Azure ML Workspace '{ML_WORKSPACE_NAME}' already exists.")
-    else:
-        # Try to create the workspace
-        try:
-            logging.info(f"🔹 Creating Azure ML Workspace '{ML_WORKSPACE_NAME}'...")
-            workspace = Workspace(location=LOCATION, name=ML_WORKSPACE_NAME, resource_group=RESOURCE_GROUP)
-            ml_client.workspaces.begin_create(workspace).result()
-            logging.info(f"✅ Azure ML Workspace '{ML_WORKSPACE_NAME}' created.")
-        except Exception as creation_error:
-            # Check if the error is due to a soft-deleted workspace
-            error_message = str(creation_error)
-            if "Soft-deleted workspace exists" in error_message:
-                # Generate a new unique name with timestamp
-                import datetime
-                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-                ML_WORKSPACE_NAME = f"{original_ml_workspace_name}-{timestamp}"
-                
-                logging.warning(f"⚠️ Soft-deleted workspace detected. Using alternative name: {ML_WORKSPACE_NAME}")
-                
-                # Try again with the new name
-                workspace = Workspace(location=LOCATION, name=ML_WORKSPACE_NAME, resource_group=RESOURCE_GROUP)
-                ml_client.workspaces.begin_create(workspace).result()
-                logging.info(f"✅ Azure ML Workspace '{ML_WORKSPACE_NAME}' created with alternative name.")
-                
-                # Update the config.json file with the new name
-                try:
-                    config["azure"]["resources"]["ml_workspace"]["name"] = ML_WORKSPACE_NAME
-                    with open("config.json", "w") as config_file:
-                        json.dump(config, config_file, indent=4)
-                    logging.info("✅ Updated config.json with new ML workspace name.")
-                except Exception as config_error:
-                    logging.warning(f"⚠️ Could not update config.json: {str(config_error)}")
-            else:
-                # If it's a different error, re-raise it
-                raise creation_error
+    # Create the workspace with the new name
+    try:
+        logging.info(f"🔹 Creating Azure ML Workspace '{ML_WORKSPACE_NAME}'...")
+        workspace = Workspace(location=LOCATION, name=ML_WORKSPACE_NAME, resource_group=RESOURCE_GROUP)
+        ml_client.workspaces.begin_create(workspace).result()
+        logging.info(f"✅ Azure ML Workspace '{ML_WORKSPACE_NAME}' created.")
+    except Exception as creation_error:
+        logging.error(f"Failed to create ML workspace: {str(creation_error)}")
+        raise
 except Exception as e:
     logging.error(f"Error managing Azure ML Workspace: {str(e)}")
     raise
@@ -380,58 +354,72 @@ except Exception as e:
     logging.warning(f"Could not check/create Key Vault: {str(e)}")
     logging.warning("This is non-critical and the deployment will continue.")
 
-# Save Credentials to JSON File
+# Save runtime settings to local.settings.json
 try:
+    # Get ML workspace endpoints from configuration
+    ml_endpoints = resource_config["ml_workspace"]["endpoints"]
+    prediction_region = ml_endpoints["prediction"]["region"]
+    prediction_path = ml_endpoints["prediction"]["path"]
+    training_region = ml_endpoints["training"]["region"]
+    training_path = ml_endpoints["training"]["path"]
+
     settings = {
         "IsEncrypted": False,
         "Values": {
+            # Azure Functions runtime settings
             "AzureWebJobsStorage": STORAGE_CONNECTION_STRING,
-            "FUNCTIONS_WORKER_RUNTIME": "python",
+            "FUNCTIONS_WORKER_RUNTIME": resource_config["function_app"]["runtime"],
             
-            "AZURE_ML_PREDICTION_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.eastus.inference.azureml.net/score",
+            # ML workspace settings
+            "AZURE_ML_PREDICTION_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.{prediction_region}.inference.azureml.net/{prediction_path}",
             "AZURE_ML_KEY": "your-ml-auth-key",  # You'll need to retrieve this manually
-            "AZURE_ML_TRAINING_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.eastus.training.azureml.net/train",
+            "AZURE_ML_TRAINING_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.{training_region}.training.azureml.net/{training_path}",
             
+            # Event Hub settings
             "EventHubConnectionString": EVENT_HUB_CONNECTION_STRING,
             "ALPHABET_EVENT_HUB": ALPHABET_EVENT_HUB,
             "PREDICTIONS_EVENT_HUB": PREDICTIONS_EVENT_HUB,
             "CONSUMER_GROUP": resource_config["event_hub"]["consumer_group"],
             
+            # Storage settings
             "AZURE_BLOB_STORAGE_CONNECTION_STRING": STORAGE_CONNECTION_STRING,
             "AZURE_BLOB_CONTAINER_NAME": BLOB_CONTAINER_NAME,
             
+            # ML workspace identification
             "AZURE_ML_WORKSPACE_NAME": ML_WORKSPACE_NAME,
             "AZURE_ML_RESOURCE_GROUP": RESOURCE_GROUP,
             "AZURE_ML_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
-            "AZURE_ML_TENANT_ID": "your-tenant-id",
+            "AZURE_ML_TENANT_ID": os.environ.get("AZURE_TENANT_ID", "your-tenant-id"),
             "AZURE_ML_MODEL_NAME": resource_config["ml_workspace"]["model_name"],
             "AZURE_ML_EXPERIMENT_NAME": resource_config["ml_workspace"]["experiment_name"],
             
+            # Form recognizer settings
             "AZURE_FORM_RECOGNIZER_ENDPOINT": resource_config["form_recognizer"]["endpoint"],
             "AZURE_FORM_RECOGNIZER_KEY": resource_config["form_recognizer"]["key"],
             
-            # Add resource identifiers for delete script
+            # Resource identifiers for deletion
             "AZURE_STORAGE_ACCOUNT": STORAGE_ACCOUNT_NAME,
             "AZURE_EVENT_HUB_NAMESPACE": EVENT_HUB_NAMESPACE,
             "AZURE_FUNCTION_APP": FUNCTION_APP_NAME,
             "AZURE_ML_WORKSPACE": ML_WORKSPACE_NAME,
             
-            # Add related resources
+            # Related resources
             "AZURE_APP_INSIGHTS": related_resources.get("app_insights", ""),
             "AZURE_LOG_ANALYTICS": related_resources.get("log_analytics", ""),
             "AZURE_KEY_VAULT": related_resources.get("key_vault", ""),
             
-            # Add resource prefix for deletion script
+            # Resource prefix for deletion
             "AZURE_RESOURCE_PREFIX": resource_config.get("prefix", "handwrit")
         }
     }
 
+    # Save to local.settings.json
     with open("local.settings.json", "w") as config_file:
         json.dump(settings, config_file, indent=4)
     
-    logging.info("✅ Configuration saved to local.settings.json")
+    logging.info("✅ Runtime settings saved to local.settings.json")
 except Exception as e:
-    logging.error(f"Error saving configuration: {str(e)}")
+    logging.error(f"Error saving runtime settings: {str(e)}")
     raise
 
 logging.info("✅ All services provisioned successfully!")

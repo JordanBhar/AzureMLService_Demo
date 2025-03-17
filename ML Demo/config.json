@@ -1,6 +1,6 @@
 {
     "azure": {
-        "subscription_id": "",
+        "subscription_id": "2a23765b-3f1d-4e29-bae6-9744f8e8fa70",
         "resource_group": "FAST-CCPR-RG-CAAI-MLresearch1",
         "location": "canadacentral",
         "resources": {
@@ -20,22 +20,93 @@
                 "consumer_group": "$Default"
             },
             "function_app": {
-                "name": "HandWritingPredictorFunc"
+                "name": "HandWritingPredictorFunc",
+                "runtime": "python",
+                "worker_count": 1,
+                "functions": {
+                    "prediction": {
+                        "type": "eventhub",
+                        "connection": "EventHubConnectionString",
+                        "cardinality": "one"
+                    },
+                    "training": {
+                        "type": "timer",
+                        "schedule": "0 */12 * * *"
+                    }
+                }
             },
             "ml_workspace": {
-                "name": "HandWritingPredictor20250317",
+                "name": "ml-mlworksp-03171648-c92",
                 "model_name": "text-extraction-model",
-                "experiment_name": "text-extraction-experiment"
+                "experiment_name": "text-extraction-experiment",
+                "endpoints": {
+                    "prediction": {
+                        "region": "eastus",
+                        "path": "score"
+                    },
+                    "training": {
+                        "region": "eastus",
+                        "path": "train"
+                    }
+                },
+                "naming": {
+                    "pattern": "ml-{base}-{timestamp}-{random}",
+                    "max_length": 24,
+                    "allowed_chars": "a-zA-Z0-9-"
+                }
             },
             "form_recognizer": {
                 "endpoint": "https://your-form-recognizer.cognitiveservices.azure.com/",
-                "key": "your-form-recognizer-key"
+                "key": "your-form-recognizer-key",
+                "model": "prebuilt-read"
             },
             "related_services": {
-                "app_insights": true,
-                "key_vault": true,
-                "log_analytics": true
+                "app_insights": {
+                    "enabled": true,
+                    "kind": "web",
+                    "application_type": "web"
+                },
+                "key_vault": {
+                    "enabled": true,
+                    "sku": {
+                        "name": "standard",
+                        "family": "A"
+                    },
+                    "access_policies": [],
+                    "enabled_for_deployment": true,
+                    "enabled_for_disk_encryption": true,
+                    "enabled_for_template_deployment": true
+                },
+                "log_analytics": {
+                    "enabled": true,
+                    "sku": "PerGB2018",
+                    "retention_days": 30
+                }
             }
+        },
+        "retry_policy": {
+            "max_attempts": 3,
+            "initial_delay": 1,
+            "max_delay": 30,
+            "exponential_base": 2
+        }
+    },
+    "services": {
+        "producer": {
+            "host": "0.0.0.0",
+            "port": 5001,
+            "debug": true,
+            "image": {
+                "compression": {
+                    "format": "JPEG",
+                    "quality": 50
+                }
+            }
+        },
+        "consumer": {
+            "host": "0.0.0.0",
+            "port": 5002,
+            "debug": true
         }
     }
 }
