@@ -1,0 +1,41 @@
+{
+    "azure": {
+        "subscription_id": "",
+        "resource_group": "FAST-CCPR-RG-CAAI-MLresearch1",
+        "location": "canadacentral",
+        "resources": {
+            "prefix": "handwrit",
+            "storage_account": {
+                "name": "alphabetstorage123",
+                "sku": "Standard_LRS",
+                "kind": "StorageV2",
+                "blob_container": "azureml-blobstore-3a7f6a43-9df4-409c-ba87-248c4cf01108"
+            },
+            "event_hub": {
+                "namespace": "crav-eventhub",
+                "topics": {
+                    "alphabet": "alphabet-topic",
+                    "predictions": "predictions-topic"
+                },
+                "consumer_group": "$Default"
+            },
+            "function_app": {
+                "name": "HandWritingPredictorFunc"
+            },
+            "ml_workspace": {
+                "name": "HandWritingPredictor20250317",
+                "model_name": "text-extraction-model",
+                "experiment_name": "text-extraction-experiment"
+            },
+            "form_recognizer": {
+                "endpoint": "https://your-form-recognizer.cognitiveservices.azure.com/",
+                "key": "your-form-recognizer-key"
+            },
+            "related_services": {
+                "app_insights": true,
+                "key_vault": true,
+                "log_analytics": true
+            }
+        }
+    }
+}
