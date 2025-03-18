@@ -23,7 +23,7 @@ config_manager = get_config_manager()
 REQUIRED_SETTINGS = [
     "EventHubConnectionString",
     "PREDICTIONS_EVENT_HUB",
-    "CONSUMER_GROUP"
+    "PREDICTIONS_CONSUMER_GROUP"
 ]
 
 # Validate required settings
@@ -47,7 +47,7 @@ def get_event_hub_connection():
     # This will refresh the config if needed
     event_hub_connection_str = config_manager.get_setting("EventHubConnectionString")
     event_hub_name = config_manager.get_setting("PREDICTIONS_EVENT_HUB")
-    consumer_group = config_manager.get_setting("CONSUMER_GROUP", "$Default")
+    consumer_group = config_manager.get_setting("PREDICTIONS_CONSUMER_GROUP", "$Default")
     
     if not event_hub_connection_str or not event_hub_name:
         logging.error("Event Hub connection settings are missing or invalid")

@@ -109,7 +109,7 @@ def get_ml_workspace():
 # Initialize Azure Function App
 app = func.FunctionApp()
 
-@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString")
+@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="$Default")
 def store_training_data(event: func.EventHubEvent):
     """Store images with labels in ML workspace storage for training"""
     try:
@@ -162,7 +162,7 @@ def store_training_data(event: func.EventHubEvent):
     except Exception as e:
         logging.error(f"❌ Error storing training data: {str(e)}")
 
-@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString")
+@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="$Default")
 def process_single_image(event: func.EventHubEvent):
     """Process image for prediction (strips label) and sends to ML endpoint"""
     try:
@@ -183,70 +183,72 @@ def process_single_image(event: func.EventHubEvent):
             logging.error("Missing ML endpoint settings")
             return
             
+        
+        # MARK - Commented out for now as we don't have the ML endpoint
         # Send to ML endpoint for prediction
-        try:
-            # Import here to avoid errors if package not installed
-            from azure.ai.ml import MLClient
-            from azure.core.credentials import AzureKeyCredential
-            from azure.ai.ml.entities import Model, Environment, CodeConfiguration
-            from azure.ai.ml.constants import AssetTypes
+        # try:
+        #     # Import here to avoid errors if package not installed
+        #     from azure.ai.ml import MLClient
+        #     from azure.core.credentials import AzureKeyCredential
+        #     from azure.ai.ml.entities import Model, Environment, CodeConfiguration
+        #     from azure.ai.ml.constants import AssetTypes
             
-            # Create headers for the request
-            headers = {
-                "Authorization": f"Bearer {ml_key}",
-                "Content-Type": "application/json"
-            }
+        #     # Create headers for the request
+        #     headers = {
+        #         "Authorization": f"Bearer {ml_key}",
+        #         "Content-Type": "application/json"
+        #     }
             
-            # Create payload (image without label)
-            payload = {
-                "input_data": {
-                    "columns": ["image"],
-                    "data": [event_body]  # Send base64 image only, without label
-                }
-            }
+        #     # Create payload (image without label)
+        #     payload = {
+        #         "input_data": {
+        #             "columns": ["image"],
+        #             "data": [event_body]  # Send base64 image only, without label
+        #         }
+        #     }
             
-            # Make prediction request
-            import requests
-            response = requests.post(
-                prediction_endpoint,
-                headers=headers,
-                json=payload
-            )
+        #     # Make prediction request
+        #     import requests
+        #     response = requests.post(
+        #         prediction_endpoint,
+        #         headers=headers,
+        #         json=payload
+        #     )
             
-            # MARK - Commented out for now as we don't have the ML endpoint
-            # if response.status_code == 200:
-            #     prediction_result = response.json()
+            
+        #     # if response.status_code == 200:
+        #     #     prediction_result = response.json()
                 
-            #     # Send prediction results to predictions event hub
-            #     event_hub_connection_str, predictions_event_hub = get_event_hub_connection("PREDICTIONS_EVENT_HUB")
+        #     #     # Send prediction results to predictions event hub
+        #     #     event_hub_connection_str, predictions_event_hub = get_event_hub_connection("PREDICTIONS_EVENT_HUB")
                 
-            #     if event_hub_connection_str and predictions_event_hub:
-            #         producer = EventHubProducerClient.from_connection_string(
-            #             conn_str=event_hub_connection_str,
-            #             eventhub_name=predictions_event_hub
-            #         )
+        #     #     if event_hub_connection_str and predictions_event_hub:
+        #     #         producer = EventHubProducerClient.from_connection_string(
+        #     #             conn_str=event_hub_connection_str,
+        #     #             eventhub_name=predictions_event_hub
+        #     #         )
                     
-            #         # Create result payload
-            #         result_payload = {
-            #             "timestamp": datetime.datetime.now().isoformat(),
-            #             "original_label": label,
-            #             "prediction": prediction_result,
-            #             "image_size_kb": image_size_kb
-            #         }
+        #     #         # Create result payload
+        #     #         result_payload = {
+        #     #             "timestamp": datetime.datetime.now().isoformat(),
+        #     #             "original_label": label,
+        #     #             "prediction": prediction_result,
+        #     #             "image_size_kb": image_size_kb
+        #     #         }
                     
-            #         # Send to predictions event hub
-            #         with producer:
-            #             event_data = EventData(json.dumps(result_payload))
-            #             producer.send_batch([event_data])
+        #     #         # Send to predictions event hub
+        #     #         with producer:
+        #     #             event_data = EventData(json.dumps(result_payload))
+        #     #             producer.send_batch([event_data])
                         
-            #         logging.info(f"✅ Prediction results sent to Event Hub: {result_payload}")
-            #     else:
-            #         logging.error("Cannot send prediction: Event Hub settings missing")
-            # else:
-            #     logging.error(f"ML endpoint returned status code: {response.status_code}")
+        #     #         logging.info(f"✅ Prediction results sent to Event Hub: {result_payload}")
+        #     #     else:
+        #     #         logging.error("Cannot send prediction: Event Hub settings missing")
+        #     # else:
+        #     #     logging.error(f"ML endpoint returned status code: {response.status_code}")
                 
-        except Exception as ml_error:
-            logging.error(f"Error calling ML endpoint: {str(ml_error)}")
+        # except Exception as ml_error:
+        #     logging.error(f"Error calling ML endpoint: {str(ml_error)}")
             
     except Exception as e:
         logging.error(f"❌ Error in prediction processing: {str(e)}")

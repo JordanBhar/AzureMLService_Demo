@@ -32,7 +32,7 @@
                 }
             },
             "ml_workspace": {
-                "name": "ml-ml-ml-ml-03181358-ngu",
+                "name": "ml-ml-ml-ml-03181520-7e0",
                 "model_name": "text-extraction-model",
                 "experiment_name": "text-extraction-experiment",
                 "endpoints": {

@@ -7,7 +7,8 @@
       "eventHubName": "%ALPHABET_EVENT_HUB%",
       "connection": "EventHubConnectionString",
       "cardinality": "one",
-      "consumerGroup": "%CONSUMER_GROUP%"
+      "consumerGroup": "$Default",
+      "epoch": "1"
     },
     {
       "authLevel": "function",
