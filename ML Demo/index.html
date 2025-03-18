@@ -22,70 +22,36 @@
         async function uploadImages(event) {
             event.preventDefault();
             let fileInput = document.getElementById("fileInput");
-            let files = fileInput.files;
+            let labelInput = document.getElementById("labelInput");
+            let file = fileInput.files[0];
+            let label = labelInput.value;
 
-            if (files.length === 0) {
-                alert("Please select at least one image.");
+            if (!file || !label.trim()) {
+                alert("Please select an image and enter a label before submitting.");
                 return;
             }
 
-            let imagesBase64 = [];
             let previewContainer = document.getElementById("previewContainer");
-            previewContainer.innerHTML = "";  
+            previewContainer.innerHTML = "";
 
-            // Create preview images with label inputs
-            let loadedImages = 0;
-            for (let i = 0; i < files.length; i++) {
-                let file = files[i];
-                let reader = new FileReader();
-                
-                reader.onloadend = function() {
-                    // Create container for image and label
-                    let container = document.createElement("div");
-                    container.className = "image-container";
-                    
-                    // Create image preview
-                    let imgElement = document.createElement("img");
-                    imgElement.src = reader.result;
-                    imgElement.className = "previewImage";
-                    container.appendChild(imgElement);
-                    
-                    // Create label input
-                    let labelInput = document.createElement("input");
-                    labelInput.type = "text";
-                    labelInput.placeholder = "Enter label (A, B, 1, 2...)";
-                    labelInput.className = "label-input";
-                    labelInput.dataset.index = i;
-                    container.appendChild(labelInput);
-                    
-                    previewContainer.appendChild(container);
-                    
-                    // Store the base64 image
-                    imagesBase64[i] = reader.result;
-                    
-                    // Track loaded images
-                    loadedImages++;
-                };
-                
-                reader.readAsDataURL(file);
-            }
+            // Create preview image
+            let container = document.createElement("div");
+            container.className = "image-container";
             
-            // Wait for all images to load before submitting
-            const checkAllImagesLoaded = () => {
-                if (loadedImages === files.length) {
-                    // All images are loaded, collect labels and submit
-                    let labelInputs = document.querySelectorAll(".label-input");
-                    let labels = Array.from(labelInputs).map(input => input.value || "");
-                    
-                    submitImages(imagesBase64, labels);
-                } else {
-                    // Not all images loaded yet, check again in a moment
-                    setTimeout(checkAllImagesLoaded, 100);
-                }
+            let reader = new FileReader();
+            reader.onloadend = async function() {
+                // Show preview
+                let imgElement = document.createElement("img");
+                imgElement.src = reader.result;
+                imgElement.className = "previewImage";
+                container.appendChild(imgElement);
+                previewContainer.appendChild(container);
+
+                // Submit the image with its label
+                await submitImages([reader.result], [label]);
             };
             
-            // Start checking if all images are loaded
-            setTimeout(checkAllImagesLoaded, 100);
+            reader.readAsDataURL(file);
         }
         
         async function submitImages(imagesBase64, labels) {
@@ -132,8 +98,11 @@
         <p>Please provide a label for each image (e.g., "A", "B", "1", "2") to help with training the model. These labels will be stored with the images in blob storage for ML training.</p>
     </div>
     <form onsubmit="uploadImages(event)">
-        <input type="file" id="fileInput" multiple accept="image/*" required>
-        <button type="submit">Submit</button>
+        <div>
+            <input type="file" id="fileInput" accept="image/*" required>
+            <input type="text" id="labelInput" placeholder="Enter label (A, B, 1, 2...)" required>
+            <button type="submit">Submit</button>
+        </div>
     </form>
     <div id="previewContainer"></div>
     <h3>Predictions:</h3>
