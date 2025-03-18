@@ -148,6 +148,124 @@ class ConfigurationManager:
         
         return {key: self.settings.get(key, "") for key in connection_keys}
     
+    def get_ml_workspace_storage(self) -> Dict[str, str]:
+        """
+        Get ML workspace's storage account details.
+        
+        Returns:
+            Dictionary with storage account name, connection string, and container name
+        """
+        self.refresh_config()
+        
+        # Get ML workspace name
+        ml_workspace_name = self.settings.get("AZURE_ML_WORKSPACE_NAME", "")
+        
+        # Get storage account details
+        storage_account = self.settings.get("AZURE_STORAGE_ACCOUNT", "")
+        connection_string = self.settings.get("AZURE_BLOB_STORAGE_CONNECTION_STRING", "")
+        container_name = self.settings.get("AZURE_BLOB_CONTAINER_NAME", "")
+        
+        # Check if storage account is related to ML workspace
+        if storage_account and ml_workspace_name and ml_workspace_name.lower() in storage_account.lower():
+            return {
+                "name": storage_account,
+                "connection_string": connection_string,
+                "container_name": container_name,
+                "is_ml_workspace_storage": True
+            }
+        
+        return {
+            "name": storage_account,
+            "connection_string": connection_string,
+            "container_name": container_name,
+            "is_ml_workspace_storage": False
+        }
+    
+    def get_service_endpoints(self) -> Dict[str, str]:
+        """
+        Get all service endpoints and connection strings.
+        Dynamically builds endpoints based on workspace name.
+        
+        Returns:
+            Dictionary with all service endpoints and connection strings
+        """
+        self.refresh_config()
+        
+        # Get ML workspace details
+        ml_workspace_name = self.settings.get("AZURE_ML_WORKSPACE_NAME", "")
+        ml_resource_group = self.settings.get("AZURE_ML_RESOURCE_GROUP", "")
+        ml_subscription_id = self.settings.get("AZURE_ML_SUBSCRIPTION_ID", "")
+        
+        # Get ML endpoint regions from config
+        prediction_region = self.get_config("azure", "resources", "ml_workspace", "endpoints", "prediction", "region", default="eastus")
+        prediction_path = self.get_config("azure", "resources", "ml_workspace", "endpoints", "prediction", "path", default="score")
+        training_region = self.get_config("azure", "resources", "ml_workspace", "endpoints", "training", "region", default="eastus")
+        training_path = self.get_config("azure", "resources", "ml_workspace", "endpoints", "training", "path", default="train")
+        
+        # Build endpoints
+        endpoints = {}
+        
+        if ml_workspace_name:
+            # ML endpoints
+            endpoints["AZURE_ML_PREDICTION_ENDPOINT"] = f"https://{ml_workspace_name}.{prediction_region}.inference.azureml.net/{prediction_path}"
+            endpoints["AZURE_ML_TRAINING_ENDPOINT"] = f"https://{ml_workspace_name}.{training_region}.training.azureml.net/{training_path}"
+            
+            # Add other endpoints that depend on ML workspace name
+            # ...
+        
+        # Add other service endpoints
+        endpoints["EventHubConnectionString"] = self.settings.get("EventHubConnectionString", "")
+        endpoints["ALPHABET_EVENT_HUB"] = self.settings.get("ALPHABET_EVENT_HUB", "")
+        endpoints["PREDICTIONS_EVENT_HUB"] = self.settings.get("PREDICTIONS_EVENT_HUB", "")
+        
+        return endpoints
+    
+    def update_service_settings(self, ml_workspace_name: str, storage_account: Dict[str, str], endpoints: Dict[str, str]) -> None:
+        """
+        Update local.settings.json with current service details.
+        
+        Args:
+            ml_workspace_name: The ML workspace name
+            storage_account: Dictionary with storage account details
+            endpoints: Dictionary with service endpoints
+        """
+        try:
+            # Load current settings
+            if os.path.exists(self.settings_path):
+                with open(self.settings_path, "r") as settings_file:
+                    settings_data = json.load(settings_file)
+            else:
+                settings_data = {"IsEncrypted": False, "Values": {}}
+            
+            # Update settings
+            values = settings_data.get("Values", {})
+            
+            # Update ML workspace settings
+            values["AZURE_ML_WORKSPACE_NAME"] = ml_workspace_name
+            
+            # Update storage account settings
+            values["AZURE_STORAGE_ACCOUNT"] = storage_account.get("name", "")
+            values["AZURE_BLOB_STORAGE_CONNECTION_STRING"] = storage_account.get("connection_string", "")
+            values["AZURE_BLOB_CONTAINER_NAME"] = storage_account.get("container_name", "")
+            values["AzureWebJobsStorage"] = storage_account.get("connection_string", "")
+            
+            # Update endpoints
+            for key, value in endpoints.items():
+                if value:  # Only update if value is not empty
+                    values[key] = value
+            
+            # Save updated settings
+            settings_data["Values"] = values
+            with open(self.settings_path, "w") as settings_file:
+                json.dump(settings_data, settings_file, indent=4)
+            
+            # Reload settings
+            self._load_settings()
+            
+            logging.info(f"Updated service settings in {self.settings_path}")
+        except Exception as e:
+            logging.error(f"Error updating service settings: {str(e)}")
+    
     def get_retry_policy(self) -> Dict[str, Any]:
         """
         Get the retry policy configuration.

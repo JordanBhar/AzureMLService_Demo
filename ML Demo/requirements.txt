@@ -8,7 +8,7 @@ flask-cors==4.0.0
 gunicorn==21.2.0  # If deploying with a production server
 
 # Configuration
-python-dotenv==1.0.0  # For loading environment variables from .env file
+# Environment variables are loaded from local.settings.json
 
 # Azure SDK & Event Hubs
 azure-functions==1.17.0
@@ -19,6 +19,7 @@ azure-mgmt-resource
 azure-mgmt-storage
 azure-mgmt-eventhub
 azure-mgmt-web
+azure-mgmt-authorization
 azure-ai-ml
 msrest==0.7.1
 
@@ -34,5 +35,5 @@ requests==2.31.0
 # Image Processing
 pillow
 pillow-heif
-
+fastavro
 #run pip install -r requirements.txt to install the dependencies

@@ -94,9 +94,18 @@ def upload_images():
             return jsonify({"error": "No image data received"}), 400  
 
         images_data = data["images"]  # Expecting a list of Base64 images
+        labels = data.get("labels", [])  # Get labels if provided
 
         if not isinstance(images_data, list) or len(images_data) == 0:
             return jsonify({"error": "Invalid image format. Expected a list of images"}), 400
+
+        # Ensure labels match images
+        if labels and len(labels) != len(images_data):
+            return jsonify({"error": "Number of labels must match number of images"}), 400
+
+        # If no labels provided, use empty strings
+        if not labels:
+            labels = ["" for _ in images_data]
 
         # Get the latest connection settings
         event_hub_connection_str, event_hub_name = get_event_hub_connection()
@@ -110,8 +119,8 @@ def upload_images():
             eventhub_name=event_hub_name
         )
 
-        for index, image_data in enumerate(images_data):
-            logging.info(f"🔹 Processing Image {index + 1}/{len(images_data)}")
+        for index, (image_data, label) in enumerate(zip(images_data, labels)):
+            logging.info(f"🔹 Processing Image {index + 1}/{len(images_data)} with label: {label}")
 
             # Extract Base64 payload (Remove header if present)
             if "," in image_data:
@@ -138,12 +147,14 @@ def upload_images():
             image.save(compressed_io, format="JPEG", quality=50)
             compressed_base64 = base64.b64encode(compressed_io.getvalue()).decode()
 
-            # Send each image as a **separate message**
+            # Send each image as a **separate message** with label property
             with producer:
                 event_data = EventData(compressed_base64)
+                # Add label as a property
+                event_data.properties = {"label": label}
                 producer.send_batch([event_data])  # Sending single image as one event
 
-            logging.info(f"✅ Image {index + 1} sent to Event Hub successfully!")
+            logging.info(f"✅ Image {index + 1} with label '{label}' sent to Event Hub successfully!")
 
         return jsonify({"message": f"Successfully sent {len(images_data)} images to Event Hub!"}), 200
 

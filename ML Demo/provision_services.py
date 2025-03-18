@@ -2,17 +2,20 @@ import json
 import os
 import time
 import logging
+import uuid
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
 from azure.mgmt.storage.models import StorageAccountCreateParameters, Sku
 from azure.mgmt.eventhub import EventHubManagementClient
 from azure.mgmt.eventhub.models import Eventhub, AccessRights
+from azure.mgmt.authorization import AuthorizationManagementClient
+from azure.mgmt.authorization.models import RoleAssignmentCreateParameters
 from azure.mgmt.web import WebSiteManagementClient
 from azure.ai.ml import MLClient
 from azure.ai.ml.entities import Workspace
 from azure.mgmt.web.models import Site, SiteConfig, NameValuePair
-from config_utils import update_ml_workspace_name
+from config_utils import update_ml_workspace_name, get_config_manager
 
 # Configure logging
 logging.basicConfig(
@@ -38,13 +41,13 @@ resource_config = azure_config["resources"]
 SUBSCRIPTION_ID = azure_config["subscription_id"]
 RESOURCE_GROUP = azure_config["resource_group"]
 LOCATION = azure_config["location"]
-STORAGE_ACCOUNT_NAME = resource_config["storage_account"]["name"]
 EVENT_HUB_NAMESPACE = resource_config["event_hub"]["namespace"]
 ALPHABET_EVENT_HUB = resource_config["event_hub"]["topics"]["alphabet"]
 PREDICTIONS_EVENT_HUB = resource_config["event_hub"]["topics"]["predictions"]
 FUNCTION_APP_NAME = resource_config["function_app"]["name"]
 ML_WORKSPACE_NAME = resource_config["ml_workspace"]["name"]
-BLOB_CONTAINER_NAME = resource_config["storage_account"]["blob_container"]
+BLOB_CONTAINER_NAME = resource_config.get("blob_container", "azureml-blobstore")
+USE_ML_WORKSPACE_STORAGE = resource_config.get("use_ml_workspace_storage", True)
 
 # Authenticate with Azure
 try:
@@ -73,39 +76,7 @@ except Exception as e:
     logging.error(f"Error managing Resource Group: {str(e)}")
     raise
 
-# Check if Storage Account exists
-try:
-    storage_client = StorageManagementClient(credential, SUBSCRIPTION_ID)
-    logging.info("🔹 Checking if Storage Account exists...")
-    storage_account_exists = any(sa.name == STORAGE_ACCOUNT_NAME for sa in storage_client.storage_accounts.list_by_resource_group(RESOURCE_GROUP))
-
-    if storage_account_exists:
-        logging.info(f"✅ Storage Account '{STORAGE_ACCOUNT_NAME}' already exists.")
-    else:
-        logging.info("🔹 Creating Storage Account...")
-        storage_params = StorageAccountCreateParameters(
-            sku=Sku(name=resource_config["storage_account"]["sku"]),
-            kind=resource_config["storage_account"]["kind"],
-            location=LOCATION
-        )
-        storage_client.storage_accounts.begin_create(RESOURCE_GROUP, STORAGE_ACCOUNT_NAME, storage_params).result()
-        logging.info(f"✅ Storage Account '{STORAGE_ACCOUNT_NAME}' created.")
-except Exception as e:
-    logging.error(f"Error managing Storage Account: {str(e)}")
-    raise
-
-# Get Storage Account Keys
-try:
-    storage_keys = storage_client.storage_accounts.list_keys(RESOURCE_GROUP, STORAGE_ACCOUNT_NAME)
-    STORAGE_KEY = storage_keys.keys[0].value
-    STORAGE_CONNECTION_STRING = f"DefaultEndpointsProtocol=https;AccountName={STORAGE_ACCOUNT_NAME};AccountKey={STORAGE_KEY};EndpointSuffix=core.windows.net"
-    logging.info("✅ Retrieved Storage Account keys.")
-except Exception as e:
-    logging.error(f"Error retrieving Storage Account keys: {str(e)}")
-    raise
-
 # Check if Event Hub Namespace exists
-# I NEED TO FIX THIS FUNCTION TO SET UP EVENT HUBS WITH BLOB STORAGE CAPTURE instead of the current blob storage provisioned
 try:
     eventhub_client = EventHubManagementClient(credential, SUBSCRIPTION_ID)
     logging.info("🔹 Checking if Event Hub Namespace exists...")
@@ -117,6 +88,22 @@ try:
         logging.info("🔹 Creating Event Hub Namespace...")
         eventhub_client.namespaces.begin_create_or_update(RESOURCE_GROUP, EVENT_HUB_NAMESPACE, {"location": LOCATION}).result()
         logging.info(f"✅ Event Hub Namespace '{EVENT_HUB_NAMESPACE}' created.")
+    
+    # Enable system-assigned managed identity for Event Hub Namespace
+    logging.info("🔹 Enabling system-assigned managed identity for Event Hub Namespace...")
+    eventhub_namespace = eventhub_client.namespaces.get(RESOURCE_GROUP, EVENT_HUB_NAMESPACE)
+    identity_params = {
+        "location": eventhub_namespace.location,
+        "identity": {
+            "type": "SystemAssigned"
+        }
+    }
+    eventhub_namespace = eventhub_client.namespaces.begin_create_or_update(
+        RESOURCE_GROUP, 
+        EVENT_HUB_NAMESPACE, 
+        identity_params
+    ).result()
+    logging.info("✅ Event Hub Namespace setup complete")
 except Exception as e:
     logging.error(f"Error managing Event Hub Namespace: {str(e)}")
     raise
@@ -168,6 +155,70 @@ try:
         workspace = Workspace(location=LOCATION, name=ML_WORKSPACE_NAME, resource_group=RESOURCE_GROUP)
         ml_client.workspaces.begin_create(workspace).result()
         logging.info(f"✅ Azure ML Workspace '{ML_WORKSPACE_NAME}' created.")
+        
+        # Wait for ML workspace to be fully provisioned with storage account
+        logging.info("🔹 Waiting for ML workspace to be fully provisioned...")
+        max_retries = 10
+        retry_delay = 30  # seconds
+        workspace_details = None
+        storage_account_id = None
+        
+        for attempt in range(max_retries):
+            try:
+                workspace_details = ml_client.workspaces.get(ML_WORKSPACE_NAME)
+                if hasattr(workspace_details, 'storage_account') and workspace_details.storage_account:
+                    storage_account_id = workspace_details.storage_account
+                    logging.info(f"Found ML workspace storage account ID: {storage_account_id}")
+                    break
+                logging.info(f"Storage account not ready in workspace, attempt {attempt + 1}/{max_retries}. Waiting {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            except Exception as e:
+                logging.warning(f"Error getting workspace details (attempt {attempt + 1}): {str(e)}")
+                time.sleep(retry_delay)
+        
+        if not workspace_details or not storage_account_id:
+            raise Exception("Could not get ML workspace storage account details")
+        
+        # Get the storage account details
+        logging.info("🔹 Getting storage account details...")
+        storage_client = StorageManagementClient(credential, SUBSCRIPTION_ID)
+        
+        # Extract storage account name from resource ID
+        storage_account_name = storage_account_id.split('/')[-1]
+        
+        # Wait for storage account to be fully provisioned
+        provisioning_retries = 5
+        retry_delay = 10  # seconds
+        storage_account = None
+        
+        for attempt in range(provisioning_retries):
+            try:
+                storage_account = storage_client.storage_accounts.get_properties(
+                    RESOURCE_GROUP,
+                    storage_account_name
+                )
+                if storage_account.provisioning_state == "Succeeded":
+                    logging.info(f"Storage account {storage_account_name} is fully provisioned")
+                    break
+                logging.info(f"Waiting for storage account provisioning... Current state: {storage_account.provisioning_state}")
+                time.sleep(retry_delay)
+            except Exception as e:
+                logging.warning(f"Error checking storage account provisioning (attempt {attempt + 1}): {str(e)}")
+                time.sleep(retry_delay)
+        
+        if not storage_account:
+            raise Exception("Could not get storage account properties")
+        
+        # Get storage account keys
+        storage_keys = storage_client.storage_accounts.list_keys(
+            RESOURCE_GROUP,
+            storage_account_name
+        )
+        STORAGE_KEY = storage_keys.keys[0].value
+        STORAGE_CONNECTION_STRING = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={STORAGE_KEY};EndpointSuffix=core.windows.net"
+        STORAGE_ACCOUNT_NAME = storage_account_name
+        logging.info(f"✅ Retrieved ML workspace storage account details: {STORAGE_ACCOUNT_NAME}")
+            
     except Exception as creation_error:
         logging.error(f"Failed to create ML workspace: {str(creation_error)}")
         raise
@@ -354,70 +405,70 @@ except Exception as e:
     logging.warning(f"Could not check/create Key Vault: {str(e)}")
     logging.warning("This is non-critical and the deployment will continue.")
 
-# Save runtime settings to local.settings.json
+# Save runtime settings to local.settings.json using ConfigurationManager
 try:
+    # Get configuration manager
+    config_manager = get_config_manager()
+    
+    # Prepare storage account details
+    storage_account_details = {
+        "name": STORAGE_ACCOUNT_NAME,
+        "connection_string": STORAGE_CONNECTION_STRING,
+        "container_name": BLOB_CONTAINER_NAME
+    }
+    
     # Get ML workspace endpoints from configuration
     ml_endpoints = resource_config["ml_workspace"]["endpoints"]
     prediction_region = ml_endpoints["prediction"]["region"]
     prediction_path = ml_endpoints["prediction"]["path"]
     training_region = ml_endpoints["training"]["region"]
     training_path = ml_endpoints["training"]["path"]
-
-    settings = {
-        "IsEncrypted": False,
-        "Values": {
-            # Azure Functions runtime settings
-            "AzureWebJobsStorage": STORAGE_CONNECTION_STRING,
-            "FUNCTIONS_WORKER_RUNTIME": resource_config["function_app"]["runtime"],
-            
-            # ML workspace settings
-            "AZURE_ML_PREDICTION_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.{prediction_region}.inference.azureml.net/{prediction_path}",
-            "AZURE_ML_KEY": "your-ml-auth-key",  # You'll need to retrieve this manually
-            "AZURE_ML_TRAINING_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.{training_region}.training.azureml.net/{training_path}",
-            
-            # Event Hub settings
-            "EventHubConnectionString": EVENT_HUB_CONNECTION_STRING,
-            "ALPHABET_EVENT_HUB": ALPHABET_EVENT_HUB,
-            "PREDICTIONS_EVENT_HUB": PREDICTIONS_EVENT_HUB,
-            "CONSUMER_GROUP": resource_config["event_hub"]["consumer_group"],
-            
-            # Storage settings
-            "AZURE_BLOB_STORAGE_CONNECTION_STRING": STORAGE_CONNECTION_STRING,
-            "AZURE_BLOB_CONTAINER_NAME": BLOB_CONTAINER_NAME,
-            
-            # ML workspace identification
-            "AZURE_ML_WORKSPACE_NAME": ML_WORKSPACE_NAME,
-            "AZURE_ML_RESOURCE_GROUP": RESOURCE_GROUP,
-            "AZURE_ML_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
-            "AZURE_ML_TENANT_ID": os.environ.get("AZURE_TENANT_ID", "your-tenant-id"),
-            "AZURE_ML_MODEL_NAME": resource_config["ml_workspace"]["model_name"],
-            "AZURE_ML_EXPERIMENT_NAME": resource_config["ml_workspace"]["experiment_name"],
-            
-            # Form recognizer settings
-            "AZURE_FORM_RECOGNIZER_ENDPOINT": resource_config["form_recognizer"]["endpoint"],
-            "AZURE_FORM_RECOGNIZER_KEY": resource_config["form_recognizer"]["key"],
-            
-            # Resource identifiers for deletion
-            "AZURE_STORAGE_ACCOUNT": STORAGE_ACCOUNT_NAME,
-            "AZURE_EVENT_HUB_NAMESPACE": EVENT_HUB_NAMESPACE,
-            "AZURE_FUNCTION_APP": FUNCTION_APP_NAME,
-            "AZURE_ML_WORKSPACE": ML_WORKSPACE_NAME,
-            
-            # Related resources
-            "AZURE_APP_INSIGHTS": related_resources.get("app_insights", ""),
-            "AZURE_LOG_ANALYTICS": related_resources.get("log_analytics", ""),
-            "AZURE_KEY_VAULT": related_resources.get("key_vault", ""),
-            
-            # Resource prefix for deletion
-            "AZURE_RESOURCE_PREFIX": resource_config.get("prefix", "handwrit")
-        }
-    }
-
-    # Save to local.settings.json
-    with open("local.settings.json", "w") as config_file:
-        json.dump(settings, config_file, indent=4)
     
-    logging.info("✅ Runtime settings saved to local.settings.json")
+    # Prepare endpoints
+    endpoints = {
+        # ML workspace settings
+        "AZURE_ML_PREDICTION_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.{prediction_region}.inference.azureml.net/{prediction_path}",
+        "AZURE_ML_KEY": "your-ml-auth-key",  # You'll need to retrieve this manually
+        "AZURE_ML_TRAINING_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.{training_region}.training.azureml.net/{training_path}",
+        
+        # Event Hub settings
+        "EventHubConnectionString": EVENT_HUB_CONNECTION_STRING,
+        "ALPHABET_EVENT_HUB": ALPHABET_EVENT_HUB,
+        "PREDICTIONS_EVENT_HUB": PREDICTIONS_EVENT_HUB,
+        "CONSUMER_GROUP": resource_config["event_hub"]["consumer_group"],
+        
+        # ML workspace identification
+        "AZURE_ML_RESOURCE_GROUP": RESOURCE_GROUP,
+        "AZURE_ML_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
+        "AZURE_ML_TENANT_ID": os.environ.get("AZURE_TENANT_ID", "your-tenant-id"),
+        "AZURE_ML_MODEL_NAME": resource_config["ml_workspace"]["model_name"],
+        "AZURE_ML_EXPERIMENT_NAME": resource_config["ml_workspace"]["experiment_name"],
+        
+        # Form recognizer settings
+        "AZURE_FORM_RECOGNIZER_ENDPOINT": resource_config["form_recognizer"]["endpoint"],
+        "AZURE_FORM_RECOGNIZER_KEY": resource_config["form_recognizer"]["key"],
+        
+        # Function app settings
+        "FUNCTIONS_WORKER_RUNTIME": resource_config["function_app"]["runtime"],
+        
+        # Resource identifiers for deletion
+        "AZURE_EVENT_HUB_NAMESPACE": EVENT_HUB_NAMESPACE,
+        "AZURE_FUNCTION_APP": FUNCTION_APP_NAME,
+        "AZURE_ML_WORKSPACE": ML_WORKSPACE_NAME,
+        
+        # Related resources
+        "AZURE_APP_INSIGHTS": related_resources.get("app_insights", ""),
+        "AZURE_LOG_ANALYTICS": related_resources.get("log_analytics", ""),
+        "AZURE_KEY_VAULT": related_resources.get("key_vault", ""),
+        
+        # Resource prefix for deletion
+        "AZURE_RESOURCE_PREFIX": resource_config.get("prefix", "handwrit")
+    }
+    
+    # Update settings using ConfigurationManager
+    config_manager.update_service_settings(ML_WORKSPACE_NAME, storage_account_details, endpoints)
+    
+    logging.info("✅ Runtime settings saved to local.settings.json using ConfigurationManager")
 except Exception as e:
     logging.error(f"Error saving runtime settings: {str(e)}")
     raise

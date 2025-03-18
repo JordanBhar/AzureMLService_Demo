@@ -5,12 +5,8 @@
         "location": "canadacentral",
         "resources": {
             "prefix": "handwrit",
-            "storage_account": {
-                "name": "alphabetstorage123",
-                "sku": "Standard_LRS",
-                "kind": "StorageV2",
-                "blob_container": "azureml-blobstore-3a7f6a43-9df4-409c-ba87-248c4cf01108"
-            },
+            "use_ml_workspace_storage": true,
+            "blob_container": "azureml-blobstore-a028e70d-f00b-4bcc-97bb-6abd33058a41",
             "event_hub": {
                 "namespace": "crav-eventhub",
                 "topics": {
@@ -36,7 +32,7 @@
                 }
             },
             "ml_workspace": {
-                "name": "ml-mlworksp-03171648-c92",
+                "name": "ml-ml-ml-ml-03181358-ngu",
                 "model_name": "text-extraction-model",
                 "experiment_name": "text-extraction-experiment",
                 "endpoints": {
