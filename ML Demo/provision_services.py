@@ -234,6 +234,11 @@ try:
         STORAGE_CONNECTION_STRING = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={STORAGE_KEY};EndpointSuffix=core.windows.net"
         STORAGE_ACCOUNT_NAME = storage_account_name
         logging.info(f"✅ Retrieved ML workspace storage account details: {STORAGE_ACCOUNT_NAME}")
+        
+        # Update blob container name in config files
+        from config_utils import update_blob_container_name
+        update_blob_container_name(BLOB_CONTAINER_NAME)
+        logging.info(f"✅ Updated blob container name in configuration files: {BLOB_CONTAINER_NAME}")
             
     except Exception as creation_error:
         logging.error(f"Failed to create ML workspace: {str(creation_error)}")

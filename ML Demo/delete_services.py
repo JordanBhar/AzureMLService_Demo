@@ -130,6 +130,7 @@ def should_delete_resource(resource_name, resource_type, active_resources, resou
     # Special handling for known related resource types
     related_resource_types = [
         "microsoft.insights/components",  # Application Insights
+        "microsoft.insights/smartdetectoralertrules",  # Application Insights Smart Detection
         "microsoft.operationalinsights/workspaces",  # Log Analytics
         "microsoft.keyvault/vaults",  # Key Vault
         "microsoft.eventgrid/systemtopics",  # Event Grid
@@ -189,6 +190,8 @@ for resource in resources_to_delete:
             api_version = "2022-10-01"
         elif resource_type.lower() == "microsoft.insights/components":
             api_version = "2020-02-02"
+        elif resource_type.lower() == "microsoft.insights/smartdetectoralertrules":
+            api_version = "2021-04-01"
         elif resource_type.lower() == "microsoft.operationalinsights/workspaces":
             api_version = "2021-06-01"
         elif resource_type.lower() == "microsoft.keyvault/vaults":

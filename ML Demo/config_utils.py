@@ -427,6 +427,39 @@ def generate_unique_name(base_name: str, max_length: int = 24) -> str:
     
     return unique_name
 
+def update_blob_container_name(container_name: str) -> None:
+    """
+    Update blob container name in both config.json and local.settings.json.
+    
+    Args:
+        container_name: The new blob container name
+    """
+    try:
+        # Update config.json
+        with open("config.json", "r") as f:
+            config = json.load(f)
+        config["azure"]["resources"]["blob_container"] = container_name
+        with open("config.json", "w") as f:
+            json.dump(config, f, indent=4)
+        
+        logging.info(f"Updated blob container name in config.json to: {container_name}")
+        
+        # Update local.settings.json through existing method
+        config_manager.update_service_settings(
+            config_manager.get_setting("AZURE_ML_WORKSPACE_NAME"),
+            {
+                "name": config_manager.get_setting("AZURE_STORAGE_ACCOUNT"),
+                "connection_string": config_manager.get_setting("AZURE_BLOB_STORAGE_CONNECTION_STRING"),
+                "container_name": container_name
+            },
+            config_manager.get_service_endpoints()
+        )
+        
+        logging.info(f"Updated blob container name in local.settings.json to: {container_name}")
+    except Exception as e:
+        logging.error(f"Failed to update blob container name: {str(e)}")
+        raise
+
 def update_ml_workspace_name() -> str:
     """
     Generate a new unique ML workspace name and update config.json.
