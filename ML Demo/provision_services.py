@@ -42,7 +42,8 @@ SUBSCRIPTION_ID = azure_config["subscription_id"]
 RESOURCE_GROUP = azure_config["resource_group"]
 LOCATION = azure_config["location"]
 EVENT_HUB_NAMESPACE = resource_config["event_hub"]["namespace"]
-ALPHABET_EVENT_HUB = resource_config["event_hub"]["topics"]["alphabet"]
+ALPHABET_EVENT_HUB = resource_config["event_hub"]["topics"]["alphabet"]["name"]
+ALPHABET_CONSUMER_GROUPS = resource_config["event_hub"]["topics"]["alphabet"]["consumer_groups"]
 PREDICTIONS_EVENT_HUB = resource_config["event_hub"]["topics"]["predictions"]
 FUNCTION_APP_NAME = resource_config["function_app"]["name"]
 ML_WORKSPACE_NAME = resource_config["ml_workspace"]["name"]
@@ -117,8 +118,23 @@ try:
         logging.info(f"✅ Event Hub '{ALPHABET_EVENT_HUB}' already exists.")
     else:
         logging.info(f"🔹 Creating Event Hub '{ALPHABET_EVENT_HUB}'...")
+        # Create Event Hub and its consumer groups
         eventhub_client.event_hubs.create_or_update(RESOURCE_GROUP, EVENT_HUB_NAMESPACE, ALPHABET_EVENT_HUB, Eventhub())
         logging.info(f"✅ Event Hub '{ALPHABET_EVENT_HUB}' created.")
+        
+        # Create consumer groups for alphabet topic
+        for purpose, group_name in ALPHABET_CONSUMER_GROUPS.items():
+            try:
+                eventhub_client.consumer_groups.create_or_update(
+                    RESOURCE_GROUP,
+                    EVENT_HUB_NAMESPACE,
+                    ALPHABET_EVENT_HUB,
+                    group_name,
+                    {}
+                )
+                logging.info(f"✅ Consumer group '{group_name}' created for purpose: {purpose}")
+            except Exception as consumer_group_error:
+                logging.error(f"Error creating consumer group '{group_name}': {str(consumer_group_error)}")
 
     if PREDICTIONS_EVENT_HUB in existing_event_hubs:
         logging.info(f"✅ Event Hub '{PREDICTIONS_EVENT_HUB}' already exists.")
@@ -435,7 +451,8 @@ try:
         "EventHubConnectionString": EVENT_HUB_CONNECTION_STRING,
         "ALPHABET_EVENT_HUB": ALPHABET_EVENT_HUB,
         "PREDICTIONS_EVENT_HUB": PREDICTIONS_EVENT_HUB,
-        "CONSUMER_GROUP": resource_config["event_hub"]["consumer_group"],
+        "CONSUMER_GROUP_SAVE": ALPHABET_CONSUMER_GROUPS["save"],
+        "CONSUMER_GROUP_PREDICTION": ALPHABET_CONSUMER_GROUPS["prediction"],
         
         # ML workspace identification
         "AZURE_ML_RESOURCE_GROUP": RESOURCE_GROUP,

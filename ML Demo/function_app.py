@@ -109,7 +109,7 @@ def get_ml_workspace():
 # Initialize Azure Function App
 app = func.FunctionApp()
 
-@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="$Default")
+@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="image_save")
 def store_training_data(event: func.EventHubEvent):
     """Store images with labels in ML workspace storage for training"""
     try:
@@ -162,7 +162,7 @@ def store_training_data(event: func.EventHubEvent):
     except Exception as e:
         logging.error(f"❌ Error storing training data: {str(e)}")
 
-@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="$Default")
+@app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="image_prediction")
 def process_single_image(event: func.EventHubEvent):
     """Process image for prediction (strips label) and sends to ML endpoint"""
     try:

@@ -6,14 +6,19 @@
         "resources": {
             "prefix": "handwrit",
             "use_ml_workspace_storage": true,
-            "blob_container": "azureml-blobstore-a028e70d-f00b-4bcc-97bb-6abd33058a41",
+            "blob_container": "azureml-blobstore-69818e50-852c-4417-8de8-49c0d551339d",
             "event_hub": {
                 "namespace": "crav-eventhub",
                 "topics": {
-                    "alphabet": "alphabet-topic",
+                    "alphabet": {
+                        "name": "alphabet-topic",
+                        "consumer_groups": {
+                            "save": "image_save",
+                            "prediction": "image_prediction"
+                        }
+                    },
                     "predictions": "predictions-topic"
-                },
-                "consumer_group": "$Default"
+                }
             },
             "function_app": {
                 "name": "HandWritingPredictorFunc",
@@ -32,7 +37,7 @@
                 }
             },
             "ml_workspace": {
-                "name": "ml-ml-ml-ml-03181520-7e0",
+                "name": "ml-ml-ml-ml-03191046-vdg",
                 "model_name": "text-extraction-model",
                 "experiment_name": "text-extraction-experiment",
                 "endpoints": {
