@@ -37,7 +37,7 @@
                 }
             },
             "ml_workspace": {
-                "name": "ml-ml-ml-ml-03191046-vdg",
+                "name": "ml-ml-ml-ml-03201035-vbw",
                 "model_name": "text-extraction-model",
                 "experiment_name": "text-extraction-experiment",
                 "endpoints": {

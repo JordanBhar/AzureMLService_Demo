@@ -43,6 +43,8 @@ if missing_settings:
 else:
     logging.info("All required settings are available")
 
+# Helper functions to get connection settings
+
 def get_event_hub_connection(event_hub_name_key="ALPHABET_EVENT_HUB"):
     """Get Event Hub connection settings with automatic refresh"""
     event_hub_connection_str = config_manager.get_setting("EventHubConnectionString")
@@ -109,6 +111,7 @@ def get_ml_workspace():
 # Initialize Azure Function App
 app = func.FunctionApp()
 
+# Event Hub triggers for image storage and training data
 @app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="image_save")
 def store_training_data(event: func.EventHubEvent):
     """Store images with labels in ML workspace storage for training"""
@@ -162,6 +165,7 @@ def store_training_data(event: func.EventHubEvent):
     except Exception as e:
         logging.error(f"❌ Error storing training data: {str(e)}")
 
+# Event Hub trigger for image prediction
 @app.event_hub_message_trigger(arg_name="event", event_hub_name="alphabet-topic", connection="EventHubConnectionString", cardinality="one", consumer_group="image_prediction")
 def process_single_image(event: func.EventHubEvent):
     """Process image for prediction (strips label) and sends to ML endpoint"""
@@ -253,6 +257,42 @@ def process_single_image(event: func.EventHubEvent):
     except Exception as e:
         logging.error(f"❌ Error in prediction processing: {str(e)}")
 
+import azure.functions as func
+import datetime
+import logging
+from azureml.core import Workspace, Experiment
+
+# Initialize Azure Function App
+app = func.FunctionApp()
+
+@app.timer_trigger(schedule="0 0 */12 * * *", arg_name="mytimer")
+def train_model_on_schedule(mytimer: func.TimerRequest):
+    """Automatically triggers ML training every 12 hours."""
+    utc_timestamp = datetime.datetime.utcnow().isoformat()
+
+    logging.info(f"🚀 Training pipeline triggered at {utc_timestamp}")
+
+    try:
+        # Load Azure ML Workspace
+        ws = Workspace.from_config()
+
+        # Get the registered experiment
+        experiment = Experiment(ws, "train-digits-model")
+
+        # Submit the pipeline run
+        run = experiment.submit("train_model.py")
+
+        logging.info(f"✅ Training started successfully: Run ID {run.id}")
+
+    except Exception as e:
+        logging.error(f"❌ Error starting training pipeline: {str(e)}")
+
+
+
+
+
+
+
 @app.route(route="health")
 def health_check(req: func.HttpRequest) -> func.HttpResponse:
     """Health check endpoint for the Azure Functions"""
@@ -299,3 +339,4 @@ def health_check(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             status_code=500
         )
+
