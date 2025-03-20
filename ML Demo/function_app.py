@@ -13,6 +13,7 @@ from azure.eventhub import EventHubProducerClient, EventData
 from azure.identity import DefaultAzureCredential
 from azure.ai.ml import MLClient
 from azure.ai.ml.entities import Model, ManagedOnlineEndpoint, ManagedOnlineDeployment
+from azure.ai.ml.entities import Environment
 
 # Add the current directory to the path so we can import config_utils
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
@@ -321,36 +322,41 @@ def deploy_model(blob_name: str, ml_client: MLClient) -> bool:
         # Register the model in Azure ML using the correct datastore path
         model = Model(
             name=f"handwriting-model-{model_version}",
-            path=f"azureml://datastores/{model_datastore}/paths/models/{model_version}.keras",
+            path=f"azureml://datastores/{model_datastore}/paths/models/{blob_name.split('/')[-1]}",
             description=f"Handwriting recognition model {model_version}"
         )
         registered_model = ml_client.models.create_or_update(model)
         logging.info(f"✅ Model registered: {registered_model.name} ({registered_model.version})")
         
-        # Create or update the endpoint
-        endpoint_name = f"handwriting-endpoint-{model_version}"
+        # Create or update the endpoint with static endpoint name
+        endpoint_name = "handwriting-prediction-ep"
         endpoint = ManagedOnlineEndpoint(
             name=endpoint_name,
-            description=f"Endpoint for handwriting model {model_version}",
+            description="Endpoint for handwriting prediction",
             auth_mode="key"
         )
         ml_client.online_endpoints.begin_create_or_update(endpoint).wait()
         logging.info(f"✅ Endpoint created/updated: {endpoint_name}")
         
-        # Create deployment configuration
+        # Define a valid Azure ML curated environment
+        tensorflow_env = Environment(
+            name="AzureML-tensorflow-2.16-cuda12",
+            version="latest"
+        )
         deployment = ManagedOnlineDeployment(
-            name=f"deployment-{model_version}",
+            name="handwriting-deployment",
             endpoint_name=endpoint_name,
             model=registered_model.id,
             instance_type="Standard_DS3_v2",
-            instance_count=1
+            instance_count=3,
+            environment=tensorflow_env,  # Add this line
         )
         
         # Deploy the model
         ml_client.online_deployments.begin_create_or_update(deployment).wait()
         
-        # Update traffic to point to new deployment
-        endpoint.traffic = {f"deployment-{model_version}": 100}
+        # Update traffic to point to static deployment
+        endpoint.traffic = {"handwriting-deployment": 100}
         ml_client.online_endpoints.begin_create_or_update(endpoint).wait()
         
         logging.info(f"🚀 Model successfully deployed to {endpoint_name}")
@@ -360,6 +366,7 @@ def deploy_model(blob_name: str, ml_client: MLClient) -> bool:
         logging.error(f"❌ Model deployment failed: {str(e)}")
         return False
 
+#MARK: THIS NEEDS TO BE FIXED as it wont automaticaly trigger, also since its looking for a file and comparing the current model to the one in blob store, maybe once the model has been uploaded delete it
 @app.blob_trigger(arg_name="myblob", path="models/{name}", connection="AZURE_BLOB_STORAGE_CONNECTION_STRING")
 def deploy_latest_model(myblob: func.InputStream):
     """Triggered when a new model is uploaded to Blob Storage and deploys it to Azure ML."""
@@ -462,6 +469,7 @@ def deploy_model_manual(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500
         )
 
+#MARK: STILL NEED TO TEST THAT THIS FIRST WILL AUTOMATICALY FIRE (12 hours, testing lets do 5min), and then that it will trigger the training pipeline
 # Timer trigger for training pipeline
 @app.timer_trigger(schedule="0 0 */12 * * *", arg_name="mytimer")
 def train_model_on_schedule(mytimer: func.TimerRequest):

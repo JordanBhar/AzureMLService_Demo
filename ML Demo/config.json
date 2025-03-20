@@ -44,7 +44,9 @@
                 "endpoints": {
                     "prediction": {
                         "region": "eastus",
-                        "path": "score"
+                        "path": "score",
+                        "prediction_endpoint": "https://handwriting-prediction-endpoint.canadacentral.inference.ml.azure.com/score"
+                    
                     },
                     "training": {
                         "region": "eastus",
