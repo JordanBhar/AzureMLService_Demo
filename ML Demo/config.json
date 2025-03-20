@@ -7,6 +7,7 @@
             "prefix": "handwrit",
             "use_ml_workspace_storage": true,
             "blob_container": "azureml-blobstore-69818e50-852c-4417-8de8-49c0d551339d",
+            "models_container": "azureml",
             "event_hub": {
                 "namespace": "crav-eventhub",
                 "topics": {
@@ -37,7 +38,7 @@
                 }
             },
             "ml_workspace": {
-                "name": "ml-ml-ml-ml-03201035-vbw",
+                "name": "ml-ml-ml-ml-03201748-nwv",
                 "model_name": "text-extraction-model",
                 "experiment_name": "text-extraction-experiment",
                 "endpoints": {

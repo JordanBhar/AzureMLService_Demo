@@ -148,10 +148,13 @@ class ConfigurationManager:
         
         return {key: self.settings.get(key, "") for key in connection_keys}
     
-    def get_ml_workspace_storage(self) -> Dict[str, str]:
+    def get_ml_workspace_storage(self, for_models: bool = False) -> Dict[str, str]:
         """
         Get ML workspace's storage account details.
         
+        Args:
+            for_models: If True, returns the models container details instead of training data container
+            
         Returns:
             Dictionary with storage account name, connection string, and container name
         """
@@ -163,7 +166,12 @@ class ConfigurationManager:
         # Get storage account details
         storage_account = self.settings.get("AZURE_STORAGE_ACCOUNT", "")
         connection_string = self.settings.get("AZURE_BLOB_STORAGE_CONNECTION_STRING", "")
-        container_name = self.settings.get("AZURE_BLOB_CONTAINER_NAME", "")
+        
+        # Get the appropriate container name based on the purpose
+        container_name = self.settings.get(
+            "AZURE_MODELS_CONTAINER_NAME" if for_models else "AZURE_BLOB_CONTAINER_NAME",
+            ""
+        )
         
         # Check if storage account is related to ML workspace
         if storage_account and ml_workspace_name and ml_workspace_name.lower() in storage_account.lower():
@@ -427,35 +435,44 @@ def generate_unique_name(base_name: str, max_length: int = 24) -> str:
     
     return unique_name
 
-def update_blob_container_name(container_name: str) -> None:
+def update_blob_container_name(container_name: str, is_models_container: bool = False) -> None:
     """
     Update blob container name in both config.json and local.settings.json.
     
     Args:
         container_name: The new blob container name
+        is_models_container: If True, updates the models container name instead of training data container
     """
     try:
         # Update config.json
         with open("config.json", "r") as f:
             config = json.load(f)
-        config["azure"]["resources"]["blob_container"] = container_name
+        
+        if is_models_container:
+            config["azure"]["resources"]["models_container"] = container_name
+        else:
+            config["azure"]["resources"]["blob_container"] = container_name
+            
         with open("config.json", "w") as f:
             json.dump(config, f, indent=4)
         
-        logging.info(f"Updated blob container name in config.json to: {container_name}")
+        container_type = "models" if is_models_container else "training data"
+        logging.info(f"Updated {container_type} container name in config.json to: {container_name}")
         
-        # Update local.settings.json through existing method
-        config_manager.update_service_settings(
-            config_manager.get_setting("AZURE_ML_WORKSPACE_NAME"),
-            {
-                "name": config_manager.get_setting("AZURE_STORAGE_ACCOUNT"),
-                "connection_string": config_manager.get_setting("AZURE_BLOB_STORAGE_CONNECTION_STRING"),
-                "container_name": container_name
-            },
-            config_manager.get_service_endpoints()
-        )
+        # Update local.settings.json
+        if os.path.exists("local.settings.json"):
+            with open("local.settings.json", "r") as f:
+                settings = json.load(f)
+            
+            # Update the appropriate container setting
+            setting_key = "AZURE_MODELS_CONTAINER_NAME" if is_models_container else "AZURE_BLOB_CONTAINER_NAME"
+            settings["Values"][setting_key] = container_name
+            
+            with open("local.settings.json", "w") as f:
+                json.dump(settings, f, indent=4)
+            
+            logging.info(f"Updated {container_type} container name in local.settings.json to: {container_name}")
         
-        logging.info(f"Updated blob container name in local.settings.json to: {container_name}")
     except Exception as e:
         logging.error(f"Failed to update blob container name: {str(e)}")
         raise

@@ -239,6 +239,93 @@ try:
         from config_utils import update_blob_container_name
         update_blob_container_name(BLOB_CONTAINER_NAME)
         logging.info(f"✅ Updated blob container name in configuration files: {BLOB_CONTAINER_NAME}")
+        
+        # Provision datastores for ML workspace
+        logging.info("🔹 Provisioning datastores for ML workspace...")
+        
+        # Define datastore names
+        TRAINING_DATASTORE_NAME = "digit_image_store"
+        MODEL_DATASTORE_NAME = "prediction_model_store"
+        
+        # Create ML client for the specific workspace
+        ml_client = MLClient(credential, SUBSCRIPTION_ID, RESOURCE_GROUP, ML_WORKSPACE_NAME)
+        
+        # Wait for ML workspace to be fully ready
+        logging.info("🔹 Waiting for ML workspace to be fully ready for datastore creation...")
+        time.sleep(30)  # Give some time for the workspace to be fully provisioned
+        
+        # Create training data datastore
+        try:
+            from azure.ai.ml.entities import AzureBlobDatastore
+            from azure.core.exceptions import ResourceNotFoundError
+            
+            # Check if training datastore exists
+            try:
+                training_datastore = ml_client.datastores.get(TRAINING_DATASTORE_NAME)
+                logging.info(f"✅ Training datastore '{TRAINING_DATASTORE_NAME}' already exists.")
+            except ResourceNotFoundError:
+                # Create training datastore
+                logging.info(f"🔹 Creating training datastore '{TRAINING_DATASTORE_NAME}'...")
+                training_datastore = AzureBlobDatastore(
+                    name=TRAINING_DATASTORE_NAME,
+                    description="Datastore for digit training images",
+                    account_name=STORAGE_ACCOUNT_NAME,
+                    container_name=BLOB_CONTAINER_NAME,
+                    credentials={
+                        "account_key": STORAGE_KEY
+                    }
+                )
+                ml_client.datastores.create_or_update(training_datastore)
+                logging.info(f"✅ Training datastore '{TRAINING_DATASTORE_NAME}' created.")
+            
+            # Create models container if it doesn't exist
+            MODELS_CONTAINER_NAME = "azureml"
+            try:
+                # Check if models container exists
+                storage_client = StorageManagementClient(credential, SUBSCRIPTION_ID)
+                blob_service = storage_client.blob_containers
+                
+                # List containers to check if models container exists
+                containers = blob_service.list(RESOURCE_GROUP, STORAGE_ACCOUNT_NAME)
+                models_container_exists = any(container.name == MODELS_CONTAINER_NAME for container in containers)
+                
+                if not models_container_exists:
+                    logging.info(f"🔹 Creating models container '{MODELS_CONTAINER_NAME}'...")
+                    blob_service.create(RESOURCE_GROUP, STORAGE_ACCOUNT_NAME, MODELS_CONTAINER_NAME, {})
+                    logging.info(f"✅ Models container '{MODELS_CONTAINER_NAME}' created.")
+                else:
+                    logging.info(f"✅ Models container '{MODELS_CONTAINER_NAME}' already exists.")
+            except Exception as container_error:
+                logging.error(f"Error managing models container: {str(container_error)}")
+                # Continue anyway as this is not critical
+            
+            # Check if model datastore exists
+            try:
+                model_datastore = ml_client.datastores.get(MODEL_DATASTORE_NAME)
+                logging.info(f"✅ Model datastore '{MODEL_DATASTORE_NAME}' already exists.")
+            except ResourceNotFoundError:
+                # Create model datastore
+                logging.info(f"🔹 Creating model datastore '{MODEL_DATASTORE_NAME}'...")
+                model_datastore = AzureBlobDatastore(
+                    name=MODEL_DATASTORE_NAME,
+                    description="Datastore for prediction models",
+                    account_name=STORAGE_ACCOUNT_NAME,
+                    container_name=MODELS_CONTAINER_NAME,
+                    credentials={
+                        "account_key": STORAGE_KEY
+                    }
+                )
+                ml_client.datastores.create_or_update(model_datastore)
+                logging.info(f"✅ Model datastore '{MODEL_DATASTORE_NAME}' created.")
+            
+            # Update config with datastore names
+            from config_utils import update_blob_container_name
+            update_blob_container_name(MODELS_CONTAINER_NAME, is_models_container=True)
+            logging.info(f"✅ Updated models container name in configuration files: {MODELS_CONTAINER_NAME}")
+            
+        except Exception as datastore_error:
+            logging.error(f"Error provisioning datastores: {str(datastore_error)}")
+            # Continue anyway as this is not critical for the basic setup
             
     except Exception as creation_error:
         logging.error(f"Failed to create ML workspace: {str(creation_error)}")
@@ -445,7 +532,7 @@ try:
     training_region = ml_endpoints["training"]["region"]
     training_path = ml_endpoints["training"]["path"]
     
-    # Prepare endpoints
+        # Prepare endpoints
     endpoints = {
         # ML workspace settings
         "AZURE_ML_PREDICTION_ENDPOINT": f"https://{ML_WORKSPACE_NAME}.{prediction_region}.inference.azureml.net/{prediction_path}",
@@ -465,6 +552,11 @@ try:
         "AZURE_ML_TENANT_ID": os.environ.get("AZURE_TENANT_ID", "your-tenant-id"),
         "AZURE_ML_MODEL_NAME": resource_config["ml_workspace"]["model_name"],
         "AZURE_ML_EXPERIMENT_NAME": resource_config["ml_workspace"]["experiment_name"],
+        
+        # Datastore names
+        "AZURE_TRAINING_DATASTORE_NAME": "image_store",
+        "AZURE_MODEL_DATASTORE_NAME": "model_store",
+        "AZURE_MODELS_CONTAINER_NAME": "azureml",
         
         # Form recognizer settings
         "AZURE_FORM_RECOGNIZER_ENDPOINT": resource_config["form_recognizer"]["endpoint"],
