@@ -38,7 +38,7 @@
                 }
             },
             "ml_workspace": {
-                "name": "ml-ml-ml-ml-03201748-nwv",
+                "name": "ml-ml-ml-ml-03201957-20j",
                 "model_name": "text-extraction-model",
                 "experiment_name": "text-extraction-experiment",
                 "endpoints": {
@@ -46,7 +46,6 @@
                         "region": "eastus",
                         "path": "score",
                         "prediction_endpoint": "https://handwriting-prediction-endpoint.canadacentral.inference.ml.azure.com/score"
-                    
                     },
                     "training": {
                         "region": "eastus",

@@ -409,6 +409,7 @@ def deploy_latest_model(myblob: func.InputStream):
         logging.error(f"❌ Error in deploy_latest_model: {str(e)}")
         logging.error(f"Stack trace: {str(e.__traceback__)}")
 
+#curl "http://localhost:7071/api/deploy-model-manual?model=handwriting_model.keras"
 @app.route(route="deploy-model-manual")
 def deploy_model_manual(req: func.HttpRequest) -> func.HttpResponse:
     """Manual trigger endpoint for model deployment"""
